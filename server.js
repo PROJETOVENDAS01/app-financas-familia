@@ -3,6 +3,7 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 
 const app = express();
 app.use(express.json({ limit: "100kb" }));
@@ -11,6 +12,8 @@ app.use(express.static(path.join(__dirname, 'dist')));
 
 // DATA_DIR aponta para um volume persistente no deploy (senão o arquivo some a cada deploy)
 const TRANSACOES_FILE = path.join(process.env.DATA_DIR || __dirname, 'transacoes.json');
+const DATA_DIR = process.env.DATA_DIR || __dirname;
+const PENDENCIAS_FILE = path.join(DATA_DIR, 'pendencias.json');
 const CLAUDE_API_KEY = process.env.CLAUDE_API_KEY;
 const CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'claude-haiku-5-5';
 // Números autorizados (só dígitos, separados por vírgula). Cada mensagem custa uma chamada paga ao Claude.
@@ -20,6 +23,17 @@ const CATEGORIAS = ['Alimentação', 'Transporte', 'Entretenimento', 'Utilidades
 const EVOLUTION_TOKEN = process.env.EVOLUTION_TOKEN || 'seu_token_aqui';
 const EVOLUTION_URL = process.env.EVOLUTION_URL || 'https://api.evolution.com.br';
 const WHATSAPP_NUMBER = process.env.WHATSAPP_NUMBER || '5521000000000';
+
+// AWS S3
+const AWS_ACCESS_KEY = process.env.AWS_ACCESS_KEY;
+const AWS_SECRET_KEY = process.env.AWS_SECRET_KEY;
+const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
+const AWS_BUCKET = process.env.AWS_BUCKET || 'app-financas-familia-files';
+
+const s3Client = AWS_ACCESS_KEY && AWS_SECRET_KEY ? new S3Client({
+  region: AWS_REGION,
+  credentials: { accessKeyId: AWS_ACCESS_KEY, secretAccessKey: AWS_SECRET_KEY }
+}) : null;
 
 // Inicializar arquivo de transações
 if (!fs.existsSync(TRANSACOES_FILE)) {
@@ -151,6 +165,58 @@ app.delete('/api/transacoes/:id', (req, res) => {
   res.json({ success: true });
 });
 
+// Upload para S3
+async function uploadParaS3(buffer, nomeArquivo, tipoMime) {
+  if (!s3Client) return null;
+  try {
+    const chave = `anexos/${Date.now()}-${nomeArquivo}`;
+    await s3Client.send(new PutObjectCommand({
+      Bucket: AWS_BUCKET,
+      Key: chave,
+      Body: buffer,
+      ContentType: tipoMime
+    }));
+    return `https://${AWS_BUCKET}.s3.${AWS_REGION}.amazonaws.com/${chave}`;
+  } catch (err) {
+    console.error('❌ Erro S3:', err.message);
+    return null;
+  }
+}
+
+// Processar imagem/PDF com Claude Vision
+async function processarImagemComVisao(caminhoArquivo, tipoMime) {
+  if (!CLAUDE_API_KEY) return null;
+  try {
+    const buffer = fs.readFileSync(caminhoArquivo);
+    const base64 = buffer.toString('base64');
+    const r = await axios.post('https://api.anthropic.com/v1/messages', {
+      model: CLAUDE_MODEL,
+      max_tokens: 300,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text: `Analise esta imagem/documento e extraia: valor, tipo (despesa/receita), categoria, descrição. Responda SOMENTE com JSON: {"tipo":"despesa"|"receita","valor":número,"categoria":string,"descricao":string}. Categorias: ${CATEGORIAS.join(', ')}. Se não conseguir, responda "nenhum".` },
+          { type: 'image', source: { type: 'base64', media_type: tipoMime, data: base64 } }
+        ]
+      }]
+    }, { headers: { 'x-api-key': CLAUDE_API_KEY, 'anthropic-version': '2023-06-01' }, timeout: 30000 });
+    const json = r.data.content?.[0]?.text?.match(/\{[\s\S]*\}/)?.[0];
+    const t = JSON.parse(json);
+    if (t.tipo === 'nenhum') return null;
+    return t;
+  } catch (err) {
+    console.error('❌ Erro Vision:', err.message);
+    return null;
+  }
+}
+
+// Funções auxiliares de pendências
+const lerPendencias = () => {
+  if (!fs.existsSync(PENDENCIAS_FILE)) return {};
+  try { return JSON.parse(fs.readFileSync(PENDENCIAS_FILE)); } catch { return {}; }
+};
+const gravarPendencias = (obj) => fs.writeFileSync(PENDENCIAS_FILE, JSON.stringify(obj, null, 2));
+
 // Webhook Evolution API - receber mensagens WhatsApp
 app.post('/webhook/whatsapp', async (req, res) => {
   res.status(200).send('OK');
@@ -167,32 +233,130 @@ app.post('/webhook/whatsapp', async (req, res) => {
     return;
   }
 
+  // Detectar imagem ou PDF
+  if (data.message.imageMessage || data.message.documentMessage) {
+    const isImage = !!data.message.imageMessage;
+    const media = data.message.imageMessage || data.message.documentMessage;
+
+    if (!media.mediaKey) return;
+
+    try {
+      const headers = process.env.EVOLUTION_AUTH_TYPE === 'apikey'
+        ? { 'apikey': EVOLUTION_TOKEN }
+        : { 'Authorization': `Bearer ${EVOLUTION_TOKEN}` };
+
+      const urlDownload = `${EVOLUTION_URL}/media/download/${data.instanceId || 'app-financas'}/${media.mediaKey}`;
+      const response = await axios.get(urlDownload, { headers, responseType: 'arraybuffer', timeout: 15000 });
+      const buffer = Buffer.from(response.data);
+      const tipoMime = response.headers['content-type'] || (isImage ? 'image/jpeg' : 'application/pdf');
+
+      const nomeTemp = `temp_${Date.now()}.${isImage ? 'jpg' : 'pdf'}`;
+      const caminhoTemp = path.join(DATA_DIR, nomeTemp);
+      fs.writeFileSync(caminhoTemp, buffer);
+
+      const transacao = await processarImagemComVisao(caminhoTemp, tipoMime);
+      fs.unlinkSync(caminhoTemp);
+
+      if (!transacao) {
+        await enviarWhatsApp(numeroRemetente, '❌ Não consegui extrair dados da imagem/PDF.');
+        return;
+      }
+
+      const urlS3 = await uploadParaS3(buffer, `${Date.now()}-anexo`, tipoMime);
+      const idPendencia = Date.now().toString();
+
+      const pendencias = lerPendencias();
+      pendencias[idPendencia] = {
+        numero: numeroRemetente,
+        transacao,
+        urlAnexo: urlS3,
+        criada: new Date().toISOString()
+      };
+      gravarPendencias(pendencias);
+
+      const msg = `💰 *Confirma?*\n\n📌 ${transacao.tipo.toUpperCase()}\n💵 R$ ${transacao.valor.toFixed(2)}\n🏷️ ${transacao.categoria}\n📝 ${transacao.descricao}`;
+      await enviarWhatsApp(numeroRemetente, msg);
+      return;
+    } catch (err) {
+      console.error('❌ Erro ao processar mídia:', err.message);
+      await enviarWhatsApp(numeroRemetente, '❌ Erro ao processar arquivo.');
+      return;
+    }
+  }
+
   // Evolution v2 pode enviar em conversation, v1 em text
   let text = data.message.text || data.message.conversation;
   if (!text) return;
 
   const mensagem = text.toLowerCase().trim();
 
+  // Processar confirmação de documento
+  if (/^(sim|✅|yes|ok|confirm)/.test(mensagem)) {
+    const pendencias = lerPendencias();
+    const idPendencia = Object.keys(pendencias).find(id => {
+      const pend = pendencias[id];
+      return pend.numero === numeroRemetente && (Date.now() - new Date(pend.criada).getTime() < 300000);
+    });
+
+    if (idPendencia) {
+      const pend = pendencias[idPendencia];
+      delete pendencias[idPendencia];
+      gravarPendencias(pendencias);
+
+      const data_obj = JSON.parse(fs.readFileSync(TRANSACOES_FILE));
+      data_obj.transacoes.push({
+        id: Date.now(),
+        tipo: pend.transacao.tipo,
+        data: new Date().toISOString().split('T')[0],
+        valor: pend.transacao.valor,
+        categoria: pend.transacao.categoria,
+        descricao: pend.transacao.descricao,
+        membro: 'Família',
+        cartao: false,
+        origem: 'whatsapp_documento',
+        attachment_url: pend.urlAnexo
+      });
+      fs.writeFileSync(TRANSACOES_FILE, JSON.stringify(data_obj, null, 2));
+      await enviarWhatsApp(numeroRemetente, `✅ R$ ${pend.transacao.valor.toFixed(2)} em ${pend.transacao.categoria} confirmado!\n📎 Anexo salvo.`);
+      return;
+    }
+  }
+
+  if (/^(nao|não|❌|no)/.test(mensagem)) {
+    const pendencias = lerPendencias();
+    const idPendencia = Object.keys(pendencias).find(id => {
+      const pend = pendencias[id];
+      return pend.numero === numeroRemetente && (Date.now() - new Date(pend.criada).getTime() < 300000);
+    });
+
+    if (idPendencia) {
+      delete pendencias[idPendencia];
+      gravarPendencias(pendencias);
+      await enviarWhatsApp(numeroRemetente, '❌ Cancelado.');
+      return;
+    }
+  }
+
   // Comando: "resumo" ou "saldo" (local, sem gastar chamada ao Claude)
   if (/^(resumo|saldo|gastos)\b/.test(mensagem)) {
     const data_obj = JSON.parse(fs.readFileSync(TRANSACOES_FILE));
     const mes_atual = new Date().getMonth();
     const ano_atual = new Date().getFullYear();
-    
+
     const trans_mes = data_obj.transacoes.filter(t => {
       const d = new Date(t.data + 'T00:00:00');
       return d.getMonth() === mes_atual && d.getFullYear() === ano_atual;
     });
-    
+
     const receitas = trans_mes.filter(t => t.tipo === 'receita').reduce((s, t) => s + t.valor, 0);
     const despesas = trans_mes.filter(t => t.tipo === 'despesa').reduce((s, t) => s + t.valor, 0);
     const saldo = receitas - despesas;
-    
+
     const msg = `📊 *Este Mês*\n📥 Receitas: R$ ${receitas.toFixed(2)}\n📤 Despesas: R$ ${despesas.toFixed(2)}\n💰 Saldo: R$ ${saldo.toFixed(2)}`;
     await enviarWhatsApp(numeroRemetente, msg);
     return;
   }
-  
+
   // Qualquer outra mensagem: o Claude extrai valor, tipo, categoria e descrição
   const t = await extrairTransacao(text);
   if (!t) {

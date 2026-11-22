@@ -10,6 +10,7 @@
     "dev:web": "vite"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1175.0",
     "@fontsource-variable/fraunces": "^5.3.0",
     "@fontsource-variable/plus-jakarta-sans": "^5.3.0",
     "@vitejs/plugin-react": "^4.7.0",
