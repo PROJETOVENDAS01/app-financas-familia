@@ -283,6 +283,7 @@ app.post('/webhook/whatsapp', async (req, res) => {
     console.warn(`⛔ Número não autorizado ignorado: ${numeroRemetente}`);
     return;
   }
+  console.log(`📨 Remetente ${numeroRemetente} → membro "${membroDe(numeroRemetente)}"`);
 
   console.log('🔍 TODA A MENSAGEM:', JSON.stringify(data.message, null, 2));
 
@@ -580,5 +581,6 @@ async function enviarWhatsApp(numero, mensagem) {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Servidor rodando em http://localhost:${PORT}`);
+  console.log(`👥 Números com membro definido: ${Object.keys(MEMBROS_WHATSAPP).length} (${Object.values(MEMBROS_WHATSAPP).join(', ') || 'nenhum'})`);
   console.log(`📱 Webhook: POST http://localhost:${PORT}/webhook/whatsapp`);
 });
