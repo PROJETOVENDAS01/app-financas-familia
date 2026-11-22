@@ -161,10 +161,19 @@ export function Metas({ transacoes, config, mes, salvarConfig }) {
 export function Membros({ transacoes, config, mes, nomesMembros, salvarConfig }) {
   const [novo, setNovo] = useState('');
   const doMes = transacoes.filter(t => t.data.startsWith(mes));
-  const totD = soma(doMes.filter(t => t.tipo === 'despesa'));
+  const totD = soma(doMes.filter(t => t.tipo === 'despesa')), totR = soma(doMes.filter(t => t.tipo === 'receita'));
   const adicionar = e => { e.preventDefault(); const n = novo.trim(); if (n) { salvarConfig({ ...config, membros: [...config.membros, n] }); setNovo(''); } };
   return (
     <div className="bento">
+      <Card className="c12" tilt={false}>
+        <h3>Total da família</h3>
+        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+          <div><div className="lab">Gastou</div><div className="val exp">{brl(totD)}</div></div>
+          <div><div className="lab">Recebeu</div><div className="val inc">{brl(totR)}</div></div>
+          <div><div className="lab">Saldo</div><div className="val">{brl(totR - totD)}</div></div>
+        </div>
+        <div className="sub" style={{ marginTop: 10 }}>Soma de todos os membros abaixo.</div>
+      </Card>
       {nomesMembros.map(n => {
         const d = doMes.filter(t => t.membro === n && t.tipo === 'despesa'), r = doMes.filter(t => t.membro === n && t.tipo === 'receita');
         const g = soma(d), porCat = DESPESAS.map(c => ({ c, v: soma(d.filter(t => t.categoria === c.n)) })).filter(x => x.v > 0).sort((a, b) => b.v - a.v);
@@ -174,7 +183,7 @@ export function Membros({ transacoes, config, mes, nomesMembros, salvarConfig })
             <div style={{ display: 'flex', gap: 16, marginBottom: 12 }}><div style={{ flex: 1 }}><div className="lab">Gastou</div><div className="val exp">{brl(g)}</div></div><div style={{ flex: 1 }}><div className="lab">Recebeu</div><div className="val inc">{brl(soma(r))}</div></div></div>
             <div className="bar" style={{ height: 10, marginTop: 10 }}>{porCat.map(x => <i key={x.c.n} title={x.c.n} style={{ width: `${x.v / (g || 1) * 100}%`, background: x.c.c }} />)}</div>
             <div className="chips">{porCat.slice(0, 3).map(x => <span key={x.c.n}>{x.c.e} {x.c.n} {brl0(x.v)}</span>)}{porCat.length === 0 && <span>Sem gastos</span>}</div>
-            {n === 'Família' && <div className="sub" style={{ marginTop: 12 }}>Lançamentos feitos pelo WhatsApp.</div>}
+            {n === 'Família' && <div className="sub" style={{ marginTop: 12 }}>Lançamentos sem dono (antigos ou de um número não cadastrado).</div>}
             {config.membros.includes(n) && <div className="btns"><button className="btn danger" onClick={() => confirm(`Remover ${n} da lista? Os lançamentos continuam salvos.`) && salvarConfig({ ...config, membros: config.membros.filter(m => m !== n) })}>Remover da lista</button></div>}
           </Card>
         );
