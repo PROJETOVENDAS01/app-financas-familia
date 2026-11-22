@@ -285,7 +285,6 @@ app.post('/webhook/whatsapp', async (req, res) => {
   }
   console.log(`📨 Remetente ${numeroRemetente} → membro "${membroDe(numeroRemetente)}"`);
 
-  console.log('🔍 TODA A MENSAGEM:', JSON.stringify(data.message, null, 2));
 
   // Detectar áudio
   if (data.message.audioMessage) {
