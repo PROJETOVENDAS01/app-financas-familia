@@ -2,9 +2,9 @@ export const CATS = [
   { n: 'Moradia', e: '🏠', c: '#5b6b8a', sub: ['Aluguel', 'Condomínio', 'Luz', 'Água', 'Gás', 'Internet', 'Reparos'] },
   { n: 'Alimentação', e: '🍽️', c: '#f59e0b', sub: ['Supermercado', 'Restaurante', 'Padaria', 'Delivery', 'Café'] },
   { n: 'Transporte', e: '🚗', c: '#3b82f6', sub: ['Combustível', 'Uber/Táxi', 'Ônibus', 'Manutenção', 'Estacionamento'] },
-  { n: 'Saúde', e: '💊', c: '#8b5cf6', sub: ['Farmácia', 'Consulta', 'Exame', 'Dentista', 'Fisioterapia'] },
+  { n: 'Saúde', e: '💊', c: '#8b5cf6', sub: ['Consulta', 'Farmácia', 'Exame', 'Dentista', 'Fisioterapia', 'Plano de Saúde'] },
   { n: 'Entretenimento', e: '🎬', c: '#ec4899', sub: ['Cinema', 'Streaming', 'Eventos', 'Passeios', 'Hobbies'] },
-  { n: 'Utilidades', e: '💡', c: '#14b8a6', sub: ['Limpeza', 'Higiene', 'Casa', 'Farmácia'] },
+  { n: 'Utilidades', e: '💡', c: '#14b8a6', sub: ['Limpeza', 'Higiene', 'Casa'] },
   { n: 'Renda', e: '💼', c: '#10b981', sub: ['Salário', 'Freelance', 'Bônus', 'Outros'] }
 ];
 export const DESPESAS = CATS.filter(c => c.n !== 'Renda');

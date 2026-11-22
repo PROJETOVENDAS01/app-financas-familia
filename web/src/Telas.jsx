@@ -58,6 +58,8 @@ function LimiteCat({ c, gasto, limite, salvar }) {
 export function Metas({ transacoes, config, mes, salvarConfig }) {
   const [novaEmoji, setNovaEmoji] = useState('');
   const [novoNome, setNovoNome] = useState('');
+  const [editandoSub, setEditandoSub] = useState(null);
+  const [novoSub, setNovoSub] = useState('');
   const desp = transacoes.filter(t => t.tipo === 'despesa' && t.data.startsWith(mes));
   const totD = soma(desp), limite = soma(Object.entries(config.orcamentos).filter(([k]) => k !== 'Renda'), ([, v]) => v);
   const salvar = (nome, valor) => salvarConfig({ ...config, orcamentos: { ...config.orcamentos, [nome]: valor } });
@@ -72,9 +74,25 @@ export function Metas({ transacoes, config, mes, salvarConfig }) {
     const n = novoNome.trim(), emoji = novaEmoji.trim();
     if (!n || !emoji) return alert('Preencha nome e emoji');
     if (cats.some(c => c.n === n)) return alert('Categoria já existe');
-    salvarConfig({ ...config, categorias: [...cats, { n, e: emoji, c: '#94a3b8' }] });
+    salvarConfig({ ...config, categorias: [...cats, { n, e: emoji, c: '#94a3b8', sub: [] }] });
     setNovoNome('');
     setNovaEmoji('');
+  };
+  const atualizarSubs = (catNome, novasSubs) => {
+    const novasCats = cats.map(c => c.n === catNome ? { ...c, sub: novasSubs } : c);
+    salvarConfig({ ...config, categorias: novasCats });
+  };
+  const adicionarSub = (catNome) => {
+    const s = novoSub.trim();
+    if (!s) return alert('Digite um tipo');
+    const cat = cats.find(c => c.n === catNome);
+    if (cat.sub.includes(s)) return alert('Tipo já existe');
+    atualizarSubs(catNome, [...cat.sub, s]);
+    setNovoSub('');
+  };
+  const deletarSub = (catNome, sub) => {
+    const cat = cats.find(c => c.n === catNome);
+    atualizarSubs(catNome, cat.sub.filter(s => s !== sub));
   };
   return (
     <div className="bento">
@@ -87,15 +105,41 @@ export function Metas({ transacoes, config, mes, salvarConfig }) {
       {cats.map(c => <LimiteCat key={c.n} c={c} gasto={soma(desp.filter(t => t.categoria === c.n))} limite={config.orcamentos[c.n] || 0} salvar={salvar} />)}
       <Card className="c12" tilt={false}>
         <h3>Gerenciar categorias</h3>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 20 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12, marginBottom: 20 }}>
           {cats.map(c => (
-            <div key={c.n} style={{ padding: 12, border: '1px solid var(--rule)', borderRadius: 12, background: 'var(--card)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-              <div>
+            <div key={c.n} style={{ padding: 12, border: '1px solid var(--rule)', borderRadius: 12, background: 'var(--card)' }}>
+              <div style={{ marginBottom: 12 }}>
                 <div style={{ fontSize: 24, marginBottom: 8 }}>{c.e}</div>
                 <div style={{ fontSize: 13, color: 'var(--sub)', marginBottom: 4 }}>Categoria</div>
-                <div style={{ fontSize: 15, fontWeight: 700 }}>{c.n}</div>
+                <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>{c.n}</div>
+                <div style={{ fontSize: 12, color: 'var(--sub)', marginBottom: 8 }}>Tipos ({c.sub?.length || 0})</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 10 }}>
+                  {c.sub?.slice(0, 2).map(s => <span key={s} style={{ fontSize: 11, background: 'var(--chip)', padding: '2px 8px', borderRadius: 6 }}>{s}</span>)}
+                  {c.sub?.length > 2 && <span style={{ fontSize: 11, color: 'var(--sub)' }}>+{c.sub.length - 2}</span>}
+                </div>
               </div>
-              <button className="btn danger" style={{ marginTop: 10, fontSize: 12 }} onClick={() => deletarCat(c.n)}>Deletar</button>
+              {editandoSub === c.n ? (
+                <div style={{ padding: 10, background: 'var(--hover)', borderRadius: 8, marginBottom: 8 }}>
+                  <input className="field" style={{ fontSize: 12, marginBottom: 6, display: 'block', width: '100%' }} value={novoSub} onChange={e => setNovoSub(e.target.value)} placeholder="Novo tipo" />
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button className="btn" style={{ flex: 1, fontSize: 11, padding: '6px 8px' }} onClick={() => adicionarSub(c.n)}>Adicionar</button>
+                    <button className="btn" style={{ flex: 1, fontSize: 11, padding: '6px 8px' }} onClick={() => setEditandoSub(null)}>Fechar</button>
+                  </div>
+                  {c.sub?.length > 0 && <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--rule)', fontSize: 11 }}>
+                    {c.sub.map(s => (
+                      <div key={s} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <span>{s}</span>
+                        <button className="btn danger" style={{ fontSize: 10, padding: '2px 6px' }} onClick={() => deletarSub(c.n, s)}>✕</button>
+                      </div>
+                    ))}
+                  </div>}
+                </div>
+              ) : (
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button className="btn" style={{ flex: 1, fontSize: 12 }} onClick={() => setEditandoSub(c.n)}>Editar tipos</button>
+                  {c.n !== 'Renda' && <button className="btn danger" style={{ fontSize: 12 }} onClick={() => deletarCat(c.n)}>Deletar</button>}
+                </div>
+              )}
             </div>
           ))}
         </div>
