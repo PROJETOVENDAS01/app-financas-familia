@@ -222,7 +222,7 @@ async function transcreverAudio(caminhoArquivo) {
   try {
     const buffer = fs.readFileSync(caminhoArquivo);
     const form = new (require('form-data'))();
-    form.append('file', buffer, { filename: 'audio.m4a' });
+    form.append('file', buffer, { filename: 'audio.ogg', contentType: 'audio/ogg' });
     form.append('model', 'whisper-1');
     form.append('language', 'pt');
 
@@ -244,12 +244,29 @@ const lerPendencias = () => {
 };
 const gravarPendencias = (obj) => fs.writeFileSync(PENDENCIAS_FILE, JSON.stringify(obj, null, 2));
 
+// Baixa a mídia pela Evolution v2: usa base64 do webhook (WEBHOOK_BASE64=true) ou pede em /chat/getBase64FromMediaMessage
+async function baixarMidia(body, data) {
+  let b64 = data.message?.base64 || data.base64, mimetype;
+  if (!b64) {
+    const headers = process.env.EVOLUTION_AUTH_TYPE === 'apikey'
+      ? { apikey: EVOLUTION_TOKEN } : { Authorization: `Bearer ${EVOLUTION_TOKEN}` };
+    const instancia = body.instance || 'app-financas';
+    const r = await axios.post(`${EVOLUTION_URL}/chat/getBase64FromMediaMessage/${instancia}`,
+      { message: { key: { id: data.key.id } }, convertToMp4: false }, { headers, timeout: 20000 });
+    b64 = r.data.base64; mimetype = r.data.mimetype;
+  }
+  if (!b64) throw new Error('Evolution não devolveu a mídia');
+  return { buffer: Buffer.from(b64.replace(/^data:[^,]*,/, ''), 'base64'), mimetype };
+}
+
 // Webhook Evolution API - receber mensagens WhatsApp
 app.post('/webhook/whatsapp', async (req, res) => {
   res.status(200).send('OK');
 
   const { data } = req.body;
   if (!data || !data.message) return;
+
+  console.log('🔍 CAMPOS DA MENSAGEM:', Object.keys(data.message));
 
   const jid = data.key?.remoteJid;
   if (!jid) return;
@@ -260,22 +277,17 @@ app.post('/webhook/whatsapp', async (req, res) => {
     return;
   }
 
+  console.log('🔍 TODA A MENSAGEM:', JSON.stringify(data.message, null, 2));
+
   // Detectar áudio
   if (data.message.audioMessage) {
+    console.log('🎙️ Áudio detectado!');
     const media = data.message.audioMessage;
 
-    if (!media.mediaKey) return;
-
     try {
-      const headers = process.env.EVOLUTION_AUTH_TYPE === 'apikey'
-        ? { 'apikey': EVOLUTION_TOKEN }
-        : { 'Authorization': `Bearer ${EVOLUTION_TOKEN}` };
+      const { buffer } = await baixarMidia(req.body, data);
 
-      const urlDownload = `${EVOLUTION_URL}/media/download/${data.instanceId || 'app-financas'}/${media.mediaKey}`;
-      const response = await axios.get(urlDownload, { headers, responseType: 'arraybuffer', timeout: 15000 });
-      const buffer = Buffer.from(response.data);
-
-      const nomeTemp = `temp_${Date.now()}.m4a`;
+      const nomeTemp = `temp_${Date.now()}.ogg`; // áudio de voz do WhatsApp é opus/ogg
       const caminhoTemp = path.join(DATA_DIR, nomeTemp);
       fs.writeFileSync(caminhoTemp, buffer);
 
@@ -320,17 +332,9 @@ app.post('/webhook/whatsapp', async (req, res) => {
     const isImage = !!data.message.imageMessage;
     const media = data.message.imageMessage || data.message.documentMessage;
 
-    if (!media.mediaKey) return;
-
     try {
-      const headers = process.env.EVOLUTION_AUTH_TYPE === 'apikey'
-        ? { 'apikey': EVOLUTION_TOKEN }
-        : { 'Authorization': `Bearer ${EVOLUTION_TOKEN}` };
-
-      const urlDownload = `${EVOLUTION_URL}/media/download/${data.instanceId || 'app-financas'}/${media.mediaKey}`;
-      const response = await axios.get(urlDownload, { headers, responseType: 'arraybuffer', timeout: 15000 });
-      const buffer = Buffer.from(response.data);
-      const tipoMime = response.headers['content-type'] || (isImage ? 'image/jpeg' : 'application/pdf');
+      const { buffer, mimetype } = await baixarMidia(req.body, data);
+      const tipoMime = mimetype || media.mimetype || (isImage ? 'image/jpeg' : 'application/pdf');
 
       const nomeTemp = `temp_${Date.now()}.${isImage ? 'jpg' : 'pdf'}`;
       const caminhoTemp = path.join(DATA_DIR, nomeTemp);
