@@ -48,7 +48,7 @@ export function Lancamento({ t, onEditar, onExcluir }) {
     <div className="li">
       <div className="dot" aria-hidden="true">{c.e}</div>
       <div style={{ minWidth: 0 }}>
-        <div className="n">{t.descricao || t.categoria}{doZap && <span className="wa">WhatsApp</span>}</div>
+        <div className="n">{t.descricao || t.categoria}{doZap && <span className="wa">WhatsApp</span>}{t.origem === 'fixo' && <span className="wa">Fixa</span>}</div>
         <div className="m">{t.categoria} · {t.membro}</div>
       </div>
       <div className={`v ${t.tipo === 'receita' ? 'inc' : 'exp'}`}>{t.tipo === 'receita' ? '+' : '−'} {brl(t.valor)}</div>

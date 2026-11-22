@@ -3,16 +3,18 @@ import { api, temChave, salvarChave, sairDaConta, NaoAutorizado } from './api.js
 import { mesAtual, addMes, mesLabel, mesmaDataEm, memo } from './util.js';
 import { Card, Ico } from './ui.jsx';
 import Overview from './Overview.jsx';
+import { Fixos } from './Fixos.jsx';
 import { Transacoes, Metas, Membros, Assistente, Gaveta } from './Telas.jsx';
 
 const NAV = [
   ['geral', 'Visão geral', <svg key="a" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="2" /><rect x="14" y="3" width="7" height="5" rx="2" /><rect x="14" y="12" width="7" height="9" rx="2" /><rect x="3" y="16" width="7" height="5" rx="2" /></svg>],
   ['transacoes', 'Transações', <svg key="b" viewBox="0 0 24 24"><path d="M7 4 3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7" /></svg>],
   ['metas', 'Metas e orçamento', <svg key="c" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1" /></svg>],
+  ['fixos', 'Contas fixas', <svg key="f" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3" /><path d="M8 3v4M16 3v4M3 10h18M9 15l2 2 4-4" /></svg>],
   ['membros', 'Por membro', <svg key="d" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5M16 4.8a3.5 3.5 0 0 1 0 6.4M18 14.8c2 .6 3.2 2.3 3.5 5.2" /></svg>],
   ['assistente', 'Assistente', <svg key="e" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" /></svg>]
 ];
-const TITULOS = { geral: 'Visão geral', transacoes: 'Transações', metas: 'Metas e orçamento', membros: 'Por membro', assistente: 'Assistente' };
+const TITULOS = { geral: 'Visão geral', transacoes: 'Transações', metas: 'Metas e orçamento', fixos: 'Contas fixas', membros: 'Por membro', assistente: 'Assistente' };
 const TEMAS = ['auto', 'light', 'dark'], ROTULO_TEMA = { auto: 'Tema: automático', light: 'Tema: claro', dark: 'Tema: escuro' };
 
 function useTema() {
@@ -53,6 +55,7 @@ export default function App() {
   const [mes, setMes] = useState(mesAtual());
   const [transacoes, setTransacoes] = useState(null);
   const [config, setConfig] = useState({ orcamentos: {}, membros: [] });
+  const [fixos, setFixos] = useState([]);
   const [gaveta, setGaveta] = useState(null);
   const [aviso, setAviso] = useState('');
 
@@ -64,8 +67,8 @@ export default function App() {
 
   const carregar = useCallback(async () => {
     try {
-      const [t, c] = await Promise.all([api.listar(), api.config()]);
-      setTransacoes(t); setConfig(c);
+      const [t, c, f] = await Promise.all([api.listar(), api.config(), api.fixos()]);
+      setTransacoes(t); setConfig(c); setFixos(f);
     } catch (e) { lidarErro(e); }
   }, [lidarErro]);
 
@@ -78,7 +81,7 @@ export default function App() {
 
   const nomesMembros = useMemo(() => [...new Set([...config.membros, ...(transacoes || []).map(t => t.membro).filter(Boolean)])], [config, transacoes]);
 
-  const executar = async fn => { try { await fn(); await carregar(); } catch (e) { lidarErro(e); } };
+  const executar = async fn => { try { await fn(); await carregar(); return true; } catch (e) { lidarErro(e); return false; } };
   const salvar = (dados, id, repetir) => executar(async () => {
     if (id) await api.editar(id, dados);
     else {
@@ -88,6 +91,8 @@ export default function App() {
     setGaveta(null); avisar(id ? 'Transação atualizada' : repetir ? 'Transação repetida por 12 meses' : 'Transação adicionada');
   });
   const excluir = t => confirm(`Excluir “${t.descricao || t.categoria}”?`) && executar(async () => { await api.excluir(t.id); avisar('Transação excluída'); });
+  const salvarFixo = (dados, id) => executar(async () => { if (id) await api.editarFixo(id, dados); else await api.criarFixo(dados); avisar(id ? 'Conta fixa atualizada' : 'Conta fixa criada'); });
+  const excluirFixo = f => confirm(`Excluir “${f.descricao}”? Os lançamentos que já venceram continuam salvos.`) && executar(async () => { await api.excluirFixo(f.id); avisar('Conta fixa excluída'); });
   const salvarConfig = c => { setConfig(c); executar(async () => { await api.salvarConfig(c); avisar('Salvo'); }); };
 
   if (!logado) return <Login erro={erroLogin} aoEntrar={c => { salvarChave(c); setErroLogin(''); setLogado(true); }} />;
@@ -124,6 +129,7 @@ export default function App() {
             {view === 'geral' && <Overview {...comum} ir={setView} />}
             {view === 'transacoes' && <Transacoes {...comum} editar={setGaveta} excluir={excluir} nova={() => setGaveta({})} />}
             {view === 'metas' && <Metas {...comum} salvarConfig={salvarConfig} />}
+            {view === 'fixos' && <Fixos {...comum} fixos={fixos} salvar={salvarFixo} excluir={excluirFixo} />}
             {view === 'membros' && <Membros {...comum} salvarConfig={salvarConfig} />}
             {view === 'assistente' && <Assistente mes={mes} />}
           </>}

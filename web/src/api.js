@@ -26,5 +26,9 @@ export const api = {
   excluir: id => req('DELETE', '/api/transacoes/' + id),
   config: () => req('GET', '/api/config'),
   salvarConfig: c => req('PUT', '/api/config', c),
+  fixos: () => req('GET', '/api/fixos'),
+  criarFixo: f => req('POST', '/api/fixos', f),
+  editarFixo: (id, f) => req('PUT', '/api/fixos/' + id, f),
+  excluirFixo: id => req('DELETE', '/api/fixos/' + id),
   perguntar: (pergunta, mes) => req('POST', '/api/assistente', { pergunta, mes })
 };

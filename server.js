@@ -141,6 +141,48 @@ app.put('/api/config', (req, res) => {
   res.json(limpo);
 });
 
+// Contas fixas mensais: geram o lançamento do mês e avisam no WhatsApp no dia do vencimento (ver fixos.js)
+const fixos = require('./fixos')({
+  ler, gravar, enviarWhatsApp,
+  membrosWhatsapp: MEMBROS_WHATSAPP, allowed: ALLOWED_NUMBERS, botNumber: WHATSAPP_NUMBER,
+  horaAviso: Number(process.env.HORA_AVISO ?? 8)
+});
+
+app.get('/api/fixos', (req, res) => res.json(ler().fixos || []));
+
+app.post('/api/fixos', (req, res) => {
+  const f = fixos.limparFixo(req.body);
+  if (!f) return res.status(400).json({ erro: 'confira tipo, valor, descrição e dia (1 a 31)' });
+  const obj = ler();
+  const id = Date.now();
+  obj.fixos = [...(obj.fixos || []), { id, ...f, meses: [] }];
+  fixos.gerarFixosDoMes(obj, fixos.mesAtual()); // já aparece neste mês
+  gravar(obj);
+  res.json({ success: true, id });
+});
+
+app.put('/api/fixos/:id', (req, res) => {
+  const f = fixos.limparFixo(req.body);
+  if (!f) return res.status(400).json({ erro: 'confira tipo, valor, descrição e dia (1 a 31)' });
+  const obj = ler();
+  const i = (obj.fixos || []).findIndex(x => x.id === Number(req.params.id));
+  if (i < 0) return res.status(404).json({ erro: 'não encontrada' });
+  obj.fixos[i] = { ...obj.fixos[i], ...f }; // mantém id e meses já gerados
+  fixos.aplicarEdicao(obj, obj.fixos[i], fixos.mesAtual());
+  fixos.gerarFixosDoMes(obj, fixos.mesAtual()); // se estava pausada e foi reativada
+  gravar(obj);
+  res.json({ success: true });
+});
+
+app.delete('/api/fixos/:id', (req, res) => {
+  const obj = ler();
+  const id = Number(req.params.id);
+  obj.fixos = (obj.fixos || []).filter(x => x.id !== id);
+  fixos.removerGerados(obj, id, fixos.hoje());
+  gravar(obj);
+  res.json({ success: true });
+});
+
 // Assistente: responde perguntas sobre as finanças usando um resumo dos últimos 3 meses.
 // Limite por hora para evitar gasto inesperado com a API paga.
 let usoAssistente = { hora: 0, n: 0 };
@@ -642,6 +684,7 @@ async function enviarWhatsApp(numero, mensagem) {
       timeout: 5000
     });
     console.log(`✅ Mensagem enviada para ${numero}`);
+    return true;
   } catch (err) {
     console.error(`❌ Erro ao enviar WhatsApp:`, {
       numero,
@@ -649,6 +692,7 @@ async function enviarWhatsApp(numero, mensagem) {
       erro: err.message,
       dados: err.response?.data
     });
+    return false;
   }
 }
 
@@ -657,4 +701,5 @@ app.listen(PORT, () => {
   console.log(`🚀 Servidor rodando em http://localhost:${PORT}`);
   console.log(`👥 Números com membro definido: ${Object.keys(MEMBROS_WHATSAPP).length} (${Object.values(MEMBROS_WHATSAPP).join(', ') || 'nenhum'})`);
   console.log(`📱 Webhook: POST http://localhost:${PORT}/webhook/whatsapp`);
+  fixos.iniciar();
 });
