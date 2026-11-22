@@ -30,6 +30,9 @@ const AWS_SECRET_KEY = process.env.AWS_SECRET_KEY;
 const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
 const AWS_BUCKET = process.env.AWS_BUCKET || 'app-financas-familia-files';
 
+// OpenAI Whisper (transcrição de áudio)
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+
 const s3Client = AWS_ACCESS_KEY && AWS_SECRET_KEY ? new S3Client({
   region: AWS_REGION,
   credentials: { accessKeyId: AWS_ACCESS_KEY, secretAccessKey: AWS_SECRET_KEY }
@@ -210,6 +213,30 @@ async function processarImagemComVisao(caminhoArquivo, tipoMime) {
   }
 }
 
+// Transcrever áudio com Whisper (OpenAI)
+async function transcreverAudio(caminhoArquivo) {
+  if (!OPENAI_API_KEY) {
+    console.warn('⚠️ OPENAI_API_KEY não configurada');
+    return null;
+  }
+  try {
+    const buffer = fs.readFileSync(caminhoArquivo);
+    const form = new (require('form-data'))();
+    form.append('file', buffer, { filename: 'audio.m4a' });
+    form.append('model', 'whisper-1');
+    form.append('language', 'pt');
+
+    const r = await axios.post('https://api.openai.com/v1/audio/transcriptions', form, {
+      headers: { ...form.getHeaders(), 'Authorization': `Bearer ${OPENAI_API_KEY}` },
+      timeout: 30000
+    });
+    return r.data.text || null;
+  } catch (err) {
+    console.error('❌ Erro Whisper:', err.message);
+    return null;
+  }
+}
+
 // Funções auxiliares de pendências
 const lerPendencias = () => {
   if (!fs.existsSync(PENDENCIAS_FILE)) return {};
@@ -231,6 +258,61 @@ app.post('/webhook/whatsapp', async (req, res) => {
   if (!ALLOWED_NUMBERS.includes(numeroRemetente)) {
     console.warn(`⛔ Número não autorizado ignorado: ${numeroRemetente}`);
     return;
+  }
+
+  // Detectar áudio
+  if (data.message.audioMessage) {
+    const media = data.message.audioMessage;
+
+    if (!media.mediaKey) return;
+
+    try {
+      const headers = process.env.EVOLUTION_AUTH_TYPE === 'apikey'
+        ? { 'apikey': EVOLUTION_TOKEN }
+        : { 'Authorization': `Bearer ${EVOLUTION_TOKEN}` };
+
+      const urlDownload = `${EVOLUTION_URL}/media/download/${data.instanceId || 'app-financas'}/${media.mediaKey}`;
+      const response = await axios.get(urlDownload, { headers, responseType: 'arraybuffer', timeout: 15000 });
+      const buffer = Buffer.from(response.data);
+
+      const nomeTemp = `temp_${Date.now()}.m4a`;
+      const caminhoTemp = path.join(DATA_DIR, nomeTemp);
+      fs.writeFileSync(caminhoTemp, buffer);
+
+      const textoAudio = await transcreverAudio(caminhoTemp);
+      fs.unlinkSync(caminhoTemp);
+
+      if (!textoAudio) {
+        await enviarWhatsApp(numeroRemetente, '❌ Não consegui transcrever o áudio.');
+        return;
+      }
+
+      const t = await extrairTransacao(textoAudio);
+      if (!t) {
+        await enviarWhatsApp(numeroRemetente, `💡 Não entendi bem. Você disse: "${textoAudio}"\n\nTente novamente com: "gasto 50 pão"`);
+        return;
+      }
+
+      const data_obj = JSON.parse(fs.readFileSync(TRANSACOES_FILE));
+      data_obj.transacoes.push({
+        id: Date.now(),
+        tipo: t.tipo,
+        data: new Date().toISOString().split('T')[0],
+        valor: t.valor,
+        categoria: t.categoria,
+        descricao: t.descricao,
+        membro: 'Família',
+        cartao: false,
+        origem: 'whatsapp_audio'
+      });
+      fs.writeFileSync(TRANSACOES_FILE, JSON.stringify(data_obj, null, 2));
+      await enviarWhatsApp(numeroRemetente, `✅ R$ ${t.valor.toFixed(2)} em ${t.categoria} registrado! 🎙️`);
+      return;
+    } catch (err) {
+      console.error('❌ Erro ao processar áudio:', err.message);
+      await enviarWhatsApp(numeroRemetente, '❌ Erro ao processar áudio.');
+      return;
+    }
   }
 
   // Detectar imagem ou PDF
