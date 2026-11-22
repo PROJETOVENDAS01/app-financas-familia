@@ -68,6 +68,22 @@ export function Metas({ transacoes, config, mes, salvarConfig }) {
         <div className="sub" style={{ marginTop: 10 }}>Os limites valem para todos os meses. Digite o valor e saia do campo para salvar.</div>
       </Card>
       {DESPESAS.map(c => <LimiteCat key={c.n} c={c} gasto={soma(desp.filter(t => t.categoria === c.n))} limite={config.orcamentos[c.n] || 0} salvar={salvar} />)}
+      <Card className="c12" tilt={false}>
+        <h3>Gerenciar categorias</h3>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+          {DESPESAS.map(c => (
+            <div key={c.n} style={{ padding: 12, border: '1px solid var(--rule)', borderRadius: 12, background: 'var(--card)' }}>
+              <div style={{ fontSize: 24, marginBottom: 8 }}>{c.e}</div>
+              <div style={{ fontSize: 13, color: 'var(--sub)', marginBottom: 4 }}>Categoria</div>
+              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>{c.n}</div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button className="btn" style={{ flex: 1, fontSize: 12 }} onClick={() => alert('Editar: ' + c.n + ' (em breve)')}>Editar</button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="sub" style={{ marginTop: 12 }}>Clique em "Editar" para mudar nome, emoji ou cor da categoria.</div>
+      </Card>
     </div>
   );
 }
