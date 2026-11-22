@@ -48,7 +48,9 @@ export default function Overview({ transacoes, config, mes, ir, nomesMembros }) 
     setCarregando(false);
   };
 
-  const gastoCat = n => soma(desp.filter(t => t.categoria === n));
+  const cats = config.categorias?.length ? config.categorias : DESPESAS;
+  const fora = desp.filter(t => !cats.some(c => c.n === t.categoria)); // gasto de categoria que não existe mais na lista
+  const grupos = fora.length ? [...cats, { n: 'Outros', e: '🏷️', c: '#94a3b8', fora: true }] : cats;
   const porMembro = nomesMembros.map(n => ({ n, v: soma(desp.filter(t => t.membro === n)) })).filter(m => m.v > 0 || config.membros.includes(m.n));
   const maxM = Math.max(...porMembro.map(m => m.v), 1);
 
@@ -84,45 +86,34 @@ export default function Overview({ transacoes, config, mes, ir, nomesMembros }) 
         </div>
       </Card>
 
-      <Card className="c12">
-        <h3>Categorias <button className="link" onClick={() => ir('metas')}>Metas</button></h3>
-        <div className="rrow">
-          {DESPESAS.map(c => {
-            const g = gastoCat(c.n), l = config.orcamentos[c.n] || 0, passou = l > 0 && g > l;
-            return (
-              <div className="r" key={c.n}>
-                <Anel pct={l > 0 ? g / l : totD > 0 ? g / totD : 0} cor={passou ? 'var(--exp)' : c.c} emoji={c.e} />
-                <div className="n">{c.n}</div>
-                <div className={`v ${passou ? 'over' : ''}`}>{l > 0 ? (passou ? `${brl0(g - l)} acima` : `${brl0(l - g)} restam`) : brl0(g)}</div>
+      <div className="c12 sechd"><h3>Categorias <button className="link" onClick={() => ir('metas')}>Metas</button></h3></div>
+      {grupos.map(c => {
+        const itens = c.fora ? fora : desp.filter(t => t.categoria === c.n);
+        const g = soma(itens), l = config.orcamentos[c.n] || 0, passou = l > 0 && g > l;
+        const porSub = {};
+        itens.forEach(t => { const k = (c.fora ? t.categoria : t.subcategoria) || 'Sem subcategoria'; porSub[k] = (porSub[k] || 0) + t.valor; });
+        const linhas = Object.entries(porSub).sort((a, b) => b[1] - a[1]);
+        return (
+          <Card className="c4 glass" key={c.n} style={{ '--c': c.c }}>
+            <div className="gc-hd">
+              <Anel pct={l > 0 ? g / l : totD > 0 ? g / totD : 0} cor={passou ? 'var(--exp)' : c.c} emoji={c.e} tam={56} />
+              <div>
+                <div className="gc-n">{c.n}</div>
+                <div className={`gc-v ${passou ? 'over' : ''}`}>{brl0(g)}{l > 0 && (passou ? ` · ${brl0(g - l)} acima` : ` · ${brl0(l - g)} restam`)}</div>
               </div>
-            );
-          })}
-        </div>
-      </Card>
-
-      <Card className="c12">
-        <h3>Gastos por tipo</h3>
-        {desp.length === 0 ? <div className="sub">Sem gastos neste mês.</div> : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
-            {(() => {
-              const subs = {};
-              desp.forEach(t => {
-                const key = t.subcategoria || t.categoria;
-                subs[key] = (subs[key] || 0) + t.valor;
-              });
-              return Object.entries(subs).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([sub, v]) => (
-                <div key={sub} style={{ padding: 12, border: '1px solid var(--rule)', borderRadius: 12, background: 'var(--card)' }}>
-                  <div style={{ fontSize: 13, color: 'var(--sub)', marginBottom: 8 }}>{sub}</div>
-                  <div style={{ fontSize: 20, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>{brl0(v)}</div>
-                  <div style={{ height: 4, background: 'var(--track)', borderRadius: 2, marginTop: 8, overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${v / Math.max(...Object.values(subs)) * 100}%`, background: 'var(--brand)' }} />
-                  </div>
+            </div>
+            <div className="gc-sub">
+              {linhas.length === 0 && <div className="gc-empty">Sem gastos neste mês</div>}
+              {linhas.map(([nome, v]) => (
+                <div className="gc-row" key={nome}>
+                  <div className="t"><span>{nome}</span><span>{brl0(v)}</span></div>
+                  <div className="gc-bar"><i style={{ width: `${v / g * 100}%` }} /></div>
                 </div>
-              ));
-            })()}
-          </div>
-        )}
-      </Card>
+              ))}
+            </div>
+          </Card>
+        );
+      })}
 
       <Card className="c4">
         <h3>Por membro <button className="link" onClick={() => ir('membros')}>Ver</button></h3>
