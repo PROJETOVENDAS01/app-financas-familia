@@ -1,0 +1,4 @@
+.env
+node_modules/
+transacoes.json
+server.log
