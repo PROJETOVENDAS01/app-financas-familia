@@ -271,16 +271,43 @@
             'Moradia': '#6366f1'
         };
 
-        function init() {
-            transacoes = JSON.parse(localStorage.getItem('transacoes') || '[]');
-            membros = JSON.parse(localStorage.getItem('membros') || '[]');
-            
-            if (!transacoes.length) {
-                transacoes = [
-                    { id: 1, type: 'income', descricao: 'Salário', valor: 5000, categoria: 'Renda', membro: 'João', data: '2025-05-15' },
-                    { id: 2, type: 'expense', descricao: 'Supermercado', valor: 280.50, categoria: 'Alimentação', membro: 'Maria', data: '2025-05-14' }
-                ];
+        // Servidor usa tipo despesa/receita; o app usa type expense/income
+        const doServidor = t => ({ id: t.id, type: t.tipo === 'receita' ? 'income' : 'expense', descricao: t.descricao, valor: t.valor, categoria: t.categoria, membro: t.membro, data: t.data });
+        const paraServidor = t => ({ id: t.id, tipo: t.type === 'income' ? 'receita' : 'despesa', descricao: t.descricao, valor: t.valor, categoria: t.categoria, membro: t.membro, data: t.data });
+
+        // Chamada autenticada. A chave é pedida uma vez e guardada neste navegador; 401 pede de novo.
+        async function api(metodo, caminho, corpo) {
+            for (;;) {
+                const chave = localStorage.getItem('apiKey') || prompt('Chave de acesso do app (API_KEY):');
+                if (!chave) throw new Error('sem chave');
+                localStorage.setItem('apiKey', chave);
+                const r = await fetch(caminho, {
+                    method: metodo,
+                    headers: { 'Authorization': 'Bearer ' + chave, 'Content-Type': 'application/json' },
+                    body: corpo ? JSON.stringify(corpo) : undefined
+                });
+                if (r.status === 401) { localStorage.removeItem('apiKey'); continue; }
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
             }
+        }
+
+        async function carregar() {
+            try {
+                const lista = (await api('GET', '/api/transacoes')).map(doServidor);
+                transacoes = lista.sort((a, b) => b.data.localeCompare(a.data) || b.id - a.id);
+                localStorage.setItem('transacoes', JSON.stringify(transacoes));
+            } catch (e) {
+                transacoes = JSON.parse(localStorage.getItem('transacoes') || '[]');
+                toast('Sem conexão com o servidor: mostrando dados salvos', 'error');
+            }
+            renderizar();
+            setTimeout(() => renderizarGraficos(), 100);
+        }
+
+        async function init() {
+            membros = JSON.parse(localStorage.getItem('membros') || '[]');
+
             if (!membros.length) {
                 membros = [
                     { id: 1, nome: 'João', budget: 1000 },
@@ -289,13 +316,13 @@
                 ];
             }
             
-            localStorage.setItem('transacoes', JSON.stringify(transacoes));
             localStorage.setItem('membros', JSON.stringify(membros));
-            
+
             document.getElementById('data').valueAsDate = new Date();
             preencherMembros();
-            renderizar();
-            setTimeout(() => renderizarGraficos(), 100);
+            await carregar();
+            // Atualiza a cada 30s para ver o que o outro lançou (app ou WhatsApp)
+            setInterval(() => { if (!document.hidden && localStorage.getItem('apiKey')) carregar(); }, 30000);
         }
 
         function abrirModalTransacao(id = null) {
@@ -324,7 +351,7 @@
             modal.classList.add('active');
         }
 
-        function salvarTransacao(e) {
+        async function salvarTransacao(e) {
             e.preventDefault();
             
             const id = document.getElementById('idTransacao').value;
@@ -338,31 +365,46 @@
                 data: document.getElementById('data').value
             };
 
+            let chamadas; // o que enviar ao servidor
             if (id) {
                 const idx = transacoes.findIndex(t => t.id === parseInt(id));
                 if (idx >= 0) transacoes[idx] = trans;
+                chamadas = [() => api('PUT', '/api/transacoes/' + trans.id, paraServidor(trans))];
                 toast('Transação atualizada!', 'success');
-            } else {
-                if (document.getElementById('replicarAno').checked) {
-                    const [ano, mes, dia] = document.getElementById('data').value.split('-');
-                    for (let m = 1; m <= 12; m++) {
-                        transacoes.push({
-                            ...trans,
-                            id: Date.now() + m,
-                            data: `2025-${String(m).padStart(2, '0')}-${dia}`
-                        });
-                    }
-                    toast('Replicado para 12 meses!', 'success');
-                } else {
-                    transacoes.unshift(trans);
-                    toast('Transação adicionada!', 'success');
+            } else if (document.getElementById('replicarAno').checked) {
+                const [ano, mes, dia] = document.getElementById('data').value.split('-');
+                const copias = [];
+                for (let m = 1; m <= 12; m++) {
+                    copias.push({
+                        ...trans,
+                        id: Date.now() + m,
+                        data: `2025-${String(m).padStart(2, '0')}-${dia}`
+                    });
                 }
+                transacoes.push(...copias);
+                chamadas = copias.map(c => () => api('POST', '/api/transacoes', paraServidor(c)));
+                toast('Replicado para 12 meses!', 'success');
+            } else {
+                transacoes.unshift(trans);
+                chamadas = [() => api('POST', '/api/transacoes', paraServidor(trans))];
+                toast('Transação adicionada!', 'success');
             }
-            
+
             localStorage.setItem('transacoes', JSON.stringify(transacoes));
             fecharModal('modalTransacao');
             renderizar();
             setTimeout(() => renderizarGraficos(), 100);
+            await sincronizar(chamadas);
+        }
+
+        // Envia ao servidor; se falhar, avisa e recarrega o que o servidor tem
+        async function sincronizar(chamadas) {
+            try {
+                for (const c of chamadas) await c();
+            } catch (e) {
+                toast('Falha ao salvar no servidor', 'error');
+                await carregar();
+            }
         }
 
         function excluirTransacao(id) {
@@ -372,6 +414,7 @@
                 renderizar();
                 setTimeout(() => renderizarGraficos(), 100);
                 toast('Transação excluída!', 'success');
+                sincronizar([() => api('DELETE', '/api/transacoes/' + id)]);
             }
         }
 

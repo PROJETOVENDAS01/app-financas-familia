@@ -2,6 +2,7 @@ const express = require('express');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const app = express();
 app.use(express.json());
@@ -14,7 +15,8 @@ const CLAUDE_API_KEY = process.env.CLAUDE_API_KEY;
 const CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'claude-haiku-5-5';
 // Números autorizados (só dígitos, separados por vírgula). Cada mensagem custa uma chamada paga ao Claude.
 const ALLOWED_NUMBERS = (process.env.ALLOWED_NUMBERS || '').split(',').map(s => s.trim()).filter(Boolean);
-const CATEGORIAS = ['Alimentação', 'Transporte', 'Saúde', 'Diversão', 'Moradia', 'Educação', 'Compras', 'Contas', 'Salário', 'Outros'];
+// Mesmas categorias do app web (index.html), para os gastos do WhatsApp aparecerem nos gráficos
+const CATEGORIAS = ['Alimentação', 'Transporte', 'Entretenimento', 'Utilidades', 'Saúde', 'Moradia', 'Renda'];
 const EVOLUTION_TOKEN = process.env.EVOLUTION_TOKEN || 'seu_token_aqui';
 const EVOLUTION_URL = process.env.EVOLUTION_URL || 'https://api.evolution.com.br';
 const WHATSAPP_NUMBER = process.env.WHATSAPP_NUMBER || '5521000000000';
@@ -24,26 +26,63 @@ if (!fs.existsSync(TRANSACOES_FILE)) {
   fs.writeFileSync(TRANSACOES_FILE, JSON.stringify({ transacoes: [] }));
 }
 
-// Buscar transações do servidor
-app.get('/api/transacoes', (req, res) => {
-  const data = JSON.parse(fs.readFileSync(TRANSACOES_FILE));
-  res.json(data.transacoes);
+// API protegida por chave. Sem API_KEY configurada, nega tudo (falha fechada).
+const API_KEY = process.env.API_KEY || '';
+function exigirChave(req, res, next) {
+  const dado = Buffer.from(req.get('Authorization') || '');
+  const esperado = Buffer.from(`Bearer ${API_KEY}`);
+  if (!API_KEY || dado.length !== esperado.length || !crypto.timingSafeEqual(dado, esperado)) {
+    return res.status(401).json({ erro: 'não autorizado' });
+  }
+  next();
+}
+app.use('/api', exigirChave);
+
+const ler = () => JSON.parse(fs.readFileSync(TRANSACOES_FILE));
+const gravar = (obj) => fs.writeFileSync(TRANSACOES_FILE, JSON.stringify(obj, null, 2));
+
+// Só aceita os campos conhecidos e valida tipo/valor
+function limpar(b) {
+  const valor = Number(b.valor);
+  if (!['despesa', 'receita'].includes(b.tipo) || !Number.isFinite(valor) || valor <= 0) return null;
+  return {
+    tipo: b.tipo, valor,
+    data: String(b.data || new Date().toISOString().split('T')[0]).slice(0, 10),
+    categoria: String(b.categoria || 'Outros').slice(0, 50),
+    descricao: String(b.descricao || '').slice(0, 100),
+    membro: String(b.membro || 'Família').slice(0, 50),
+    cartao: !!b.cartao
+  };
+}
+
+app.get('/api/transacoes', (req, res) => res.json(ler().transacoes));
+
+app.post('/api/transacoes', (req, res) => {
+  const t = limpar(req.body);
+  if (!t) return res.status(400).json({ erro: 'tipo/valor inválido' });
+  const obj = ler();
+  const id = Number.isFinite(Number(req.body.id)) ? Number(req.body.id) : Date.now();
+  obj.transacoes.push({ id, ...t });
+  gravar(obj);
+  res.json({ success: true, id });
 });
 
-// Salvar transação do app web
-app.post('/api/transacoes', (req, res) => {
-  const { tipo, data, valor, categoria, descricao, membro, cartao } = req.body;
-  
-  const data_obj = JSON.parse(fs.readFileSync(TRANSACOES_FILE));
-  const novaTransacao = {
-    id: Date.now(),
-    tipo, data, valor, categoria, descricao, membro, cartao
-  };
-  
-  data_obj.transacoes.push(novaTransacao);
-  fs.writeFileSync(TRANSACOES_FILE, JSON.stringify(data_obj, null, 2));
-  
-  res.json({ success: true, id: novaTransacao.id });
+app.put('/api/transacoes/:id', (req, res) => {
+  const t = limpar(req.body);
+  if (!t) return res.status(400).json({ erro: 'tipo/valor inválido' });
+  const obj = ler();
+  const i = obj.transacoes.findIndex(x => x.id === Number(req.params.id));
+  if (i < 0) return res.status(404).json({ erro: 'não encontrada' });
+  obj.transacoes[i] = { id: obj.transacoes[i].id, ...t };
+  gravar(obj);
+  res.json({ success: true });
+});
+
+app.delete('/api/transacoes/:id', (req, res) => {
+  const obj = ler();
+  obj.transacoes = obj.transacoes.filter(x => x.id !== Number(req.params.id));
+  gravar(obj);
+  res.json({ success: true });
 });
 
 // Webhook Evolution API - receber mensagens WhatsApp
