@@ -4,7 +4,7 @@ export const CATS = [
   { n: 'Transporte', e: '🚗', c: '#3b82f6', sub: ['Combustível', 'Uber/Táxi', 'Ônibus', 'Manutenção', 'Estacionamento'] },
   { n: 'Saúde', e: '💊', c: '#8b5cf6', sub: ['Farmácia', 'Consulta', 'Exame', 'Dentista', 'Fisioterapia'] },
   { n: 'Entretenimento', e: '🎬', c: '#ec4899', sub: ['Cinema', 'Streaming', 'Eventos', 'Passeios', 'Hobbies'] },
-  { n: 'Utilidades', e: '💡', c: '#14b8a6', sub: ['Supermercado', 'Farmácia', 'Casa', 'Limpeza'] },
+  { n: 'Utilidades', e: '💡', c: '#14b8a6', sub: ['Limpeza', 'Higiene', 'Casa', 'Farmácia'] },
   { n: 'Renda', e: '💼', c: '#10b981', sub: ['Salário', 'Freelance', 'Bônus', 'Outros'] }
 ];
 export const DESPESAS = CATS.filter(c => c.n !== 'Renda');
