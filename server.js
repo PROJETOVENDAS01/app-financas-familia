@@ -26,12 +26,11 @@ if (!fs.existsSync(TRANSACOES_FILE)) {
   fs.writeFileSync(TRANSACOES_FILE, JSON.stringify({ transacoes: [] }));
 }
 
-// API protegida por chave. Sem API_KEY configurada, nega tudo (falha fechada).
-const API_KEY = process.env.API_KEY || '';
+// API protegida por chave. Sem VALID_KEYS configurada, nega tudo (falha fechada).
+const VALID_KEYS = (process.env.VALID_KEYS || '').split(',').map(s => s.trim()).filter(Boolean);
 function exigirChave(req, res, next) {
-  const dado = Buffer.from(req.get('Authorization') || '');
-  const esperado = Buffer.from(`Bearer ${API_KEY}`);
-  if (!API_KEY || dado.length !== esperado.length || !crypto.timingSafeEqual(dado, esperado)) {
+  const chaveRecebida = req.get('Authorization')?.replace(/^Bearer\s+/, '') || '';
+  if (!VALID_KEYS.length || !VALID_KEYS.some(k => crypto.timingSafeEqual(Buffer.from(chaveRecebida), Buffer.from(k)))) {
     return res.status(401).json({ erro: 'não autorizado' });
   }
   next();
