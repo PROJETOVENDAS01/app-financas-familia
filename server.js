@@ -81,14 +81,15 @@ app.put('/api/transacoes/:id', (req, res) => {
 app.get('/api/config', (req, res) => res.json({ orcamentos: {}, membros: [], ...ler().config }));
 
 app.put('/api/config', (req, res) => {
-  const { orcamentos = {}, membros = [] } = req.body || {};
-  if (typeof orcamentos !== 'object' || !Array.isArray(membros)) return res.status(400).json({ erro: 'formato inválido' });
-  const limpo = { orcamentos: {}, membros: [] };
+  const { orcamentos = {}, membros = [], categorias = [] } = req.body || {};
+  if (typeof orcamentos !== 'object' || !Array.isArray(membros) || !Array.isArray(categorias)) return res.status(400).json({ erro: 'formato inválido' });
+  const limpo = { orcamentos: {}, membros: [], categorias: [] };
   for (const [cat, v] of Object.entries(orcamentos)) {
     const n = Number(v);
     if (Number.isFinite(n) && n > 0) limpo.orcamentos[String(cat).slice(0, 50)] = n;
   }
   limpo.membros = [...new Set(membros.map(m => String(m).trim().slice(0, 50)).filter(Boolean))].slice(0, 20);
+  limpo.categorias = categorias.map(c => ({ n: String(c.n).slice(0, 50), e: String(c.e).slice(0, 5), c: String(c.c).slice(0, 10), sub: Array.isArray(c.sub) ? c.sub.map(s => String(s).slice(0, 50)).slice(0, 50) : [] }));
   const obj = ler();
   obj.config = limpo;
   gravar(obj);
