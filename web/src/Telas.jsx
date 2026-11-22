@@ -56,9 +56,26 @@ function LimiteCat({ c, gasto, limite, salvar }) {
 }
 
 export function Metas({ transacoes, config, mes, salvarConfig }) {
+  const [novaEmoji, setNovaEmoji] = useState('');
+  const [novoNome, setNovoNome] = useState('');
   const desp = transacoes.filter(t => t.tipo === 'despesa' && t.data.startsWith(mes));
   const totD = soma(desp), limite = soma(Object.entries(config.orcamentos).filter(([k]) => k !== 'Renda'), ([, v]) => v);
   const salvar = (nome, valor) => salvarConfig({ ...config, orcamentos: { ...config.orcamentos, [nome]: valor } });
+  const cats = config.categorias || DESPESAS;
+  const deletarCat = (nome) => {
+    if (confirm(`Deletar categoria "${nome}"? Os lançamentos continuam salvos.`)) {
+      salvarConfig({ ...config, categorias: cats.filter(c => c.n !== nome) });
+    }
+  };
+  const adicionarCat = (e) => {
+    e.preventDefault();
+    const n = novoNome.trim(), emoji = novaEmoji.trim();
+    if (!n || !emoji) return alert('Preencha nome e emoji');
+    if (cats.some(c => c.n === n)) return alert('Categoria já existe');
+    salvarConfig({ ...config, categorias: [...cats, { n, e: emoji, c: '#94a3b8' }] });
+    setNovoNome('');
+    setNovaEmoji('');
+  };
   return (
     <div className="bento">
       <Card className="c12">
@@ -67,22 +84,30 @@ export function Metas({ transacoes, config, mes, salvarConfig }) {
         <div className="bar" style={{ height: 12 }}><i style={{ width: `${limite > 0 ? Math.min(totD / limite, 1) * 100 : 0}%`, background: totD > limite && limite > 0 ? 'var(--exp)' : 'var(--brand)' }} /></div>
         <div className="sub" style={{ marginTop: 10 }}>Os limites valem para todos os meses. Digite o valor e saia do campo para salvar.</div>
       </Card>
-      {DESPESAS.map(c => <LimiteCat key={c.n} c={c} gasto={soma(desp.filter(t => t.categoria === c.n))} limite={config.orcamentos[c.n] || 0} salvar={salvar} />)}
+      {cats.map(c => <LimiteCat key={c.n} c={c} gasto={soma(desp.filter(t => t.categoria === c.n))} limite={config.orcamentos[c.n] || 0} salvar={salvar} />)}
       <Card className="c12" tilt={false}>
         <h3>Gerenciar categorias</h3>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-          {DESPESAS.map(c => (
-            <div key={c.n} style={{ padding: 12, border: '1px solid var(--rule)', borderRadius: 12, background: 'var(--card)' }}>
-              <div style={{ fontSize: 24, marginBottom: 8 }}>{c.e}</div>
-              <div style={{ fontSize: 13, color: 'var(--sub)', marginBottom: 4 }}>Categoria</div>
-              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>{c.n}</div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <button className="btn" style={{ flex: 1, fontSize: 12 }} onClick={() => alert('Editar: ' + c.n + ' (em breve)')}>Editar</button>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 20 }}>
+          {cats.map(c => (
+            <div key={c.n} style={{ padding: 12, border: '1px solid var(--rule)', borderRadius: 12, background: 'var(--card)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontSize: 24, marginBottom: 8 }}>{c.e}</div>
+                <div style={{ fontSize: 13, color: 'var(--sub)', marginBottom: 4 }}>Categoria</div>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>{c.n}</div>
               </div>
+              <button className="btn danger" style={{ marginTop: 10, fontSize: 12 }} onClick={() => deletarCat(c.n)}>Deletar</button>
             </div>
           ))}
         </div>
-        <div className="sub" style={{ marginTop: 12 }}>Clique em "Editar" para mudar nome, emoji ou cor da categoria.</div>
+        <form onSubmit={adicionarCat} style={{ paddingTop: 20, borderTop: '1px solid var(--rule)' }}>
+          <h3 style={{ marginBottom: 16 }}>Adicionar categoria</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+            <label className="f">Emoji<input className="field" value={novaEmoji} onChange={e => setNovaEmoji(e.target.value)} placeholder="Ex: 🏋️" maxLength={5} /></label>
+            <label className="f">Nome<input className="field" value={novoNome} onChange={e => setNovoNome(e.target.value)} placeholder="Ex: Academia" maxLength={30} /></label>
+          </div>
+          <button className="btn p" type="submit">Adicionar</button>
+        </form>
+        <div className="sub" style={{ marginTop: 12 }}>Cole emojis de qualquer fonte. As categorias criadas aparecem ao lançar transações.</div>
       </Card>
     </div>
   );
