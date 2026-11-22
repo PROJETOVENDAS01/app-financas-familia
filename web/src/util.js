@@ -1,14 +1,14 @@
 export const CATS = [
-  { n: 'Moradia', e: '🏠', c: '#5b6b8a' },
-  { n: 'Alimentação', e: '🍽️', c: '#f59e0b' },
-  { n: 'Transporte', e: '🚗', c: '#3b82f6' },
-  { n: 'Saúde', e: '💊', c: '#8b5cf6' },
-  { n: 'Entretenimento', e: '🎬', c: '#ec4899' },
-  { n: 'Utilidades', e: '💡', c: '#14b8a6' },
-  { n: 'Renda', e: '💼', c: '#10b981' }
+  { n: 'Moradia', e: '🏠', c: '#5b6b8a', sub: ['Aluguel', 'Condomínio', 'Luz', 'Água', 'Gás', 'Internet', 'Reparos'] },
+  { n: 'Alimentação', e: '🍽️', c: '#f59e0b', sub: ['Supermercado', 'Restaurante', 'Padaria', 'Delivery', 'Café'] },
+  { n: 'Transporte', e: '🚗', c: '#3b82f6', sub: ['Combustível', 'Uber/Táxi', 'Ônibus', 'Manutenção', 'Estacionamento'] },
+  { n: 'Saúde', e: '💊', c: '#8b5cf6', sub: ['Farmácia', 'Consulta', 'Exame', 'Dentista', 'Fisioterapia'] },
+  { n: 'Entretenimento', e: '🎬', c: '#ec4899', sub: ['Cinema', 'Streaming', 'Eventos', 'Passeios', 'Hobbies'] },
+  { n: 'Utilidades', e: '💡', c: '#14b8a6', sub: ['Supermercado', 'Farmácia', 'Casa', 'Limpeza'] },
+  { n: 'Renda', e: '💼', c: '#10b981', sub: ['Salário', 'Freelance', 'Bônus', 'Outros'] }
 ];
 export const DESPESAS = CATS.filter(c => c.n !== 'Renda');
-export const catInfo = n => CATS.find(c => c.n === n) || { n, e: '🏷️', c: '#94a3b8' };
+export const catInfo = n => CATS.find(c => c.n === n) || { n, e: '🏷️', c: '#94a3b8', sub: [] };
 
 const fmt = (o) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', ...o });
 export const brl = v => fmt().format(Number(v) || 0);
