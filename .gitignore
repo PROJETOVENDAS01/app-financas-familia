@@ -2,3 +2,5 @@
 node_modules/
 transacoes.json
 server.log
+dist/
+*.bak

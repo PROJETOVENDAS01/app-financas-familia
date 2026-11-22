@@ -1,0 +1,174 @@
+import React, { useMemo, useRef, useState, useEffect } from 'react';
+import { Card, Anel, Avatar, Lancamento, Vazio, Ico } from './ui.jsx';
+import { CATS, DESPESAS, catInfo, brl, brl0, soma, corMembro, addMes } from './util.js';
+import { api } from './api.js';
+
+/* ---------- Transações ---------- */
+export function Transacoes({ transacoes, mes, nomesMembros, editar, excluir, nova }) {
+  const [q, setQ] = useState(''), [cat, setCat] = useState(''), [mem, setMem] = useState(''), [tipo, setTipo] = useState('');
+  const lista = useMemo(() => transacoes
+    .filter(t => t.data.startsWith(mes))
+    .filter(t => !cat || t.categoria === cat)
+    .filter(t => !mem || t.membro === mem)
+    .filter(t => !tipo || t.tipo === tipo)
+    .filter(t => !q || `${t.descricao} ${t.categoria} ${t.membro}`.toLowerCase().includes(q.toLowerCase()))
+    .sort((a, b) => b.data.localeCompare(a.data) || b.id - a.id), [transacoes, mes, q, cat, mem, tipo]);
+  const rec = soma(lista.filter(t => t.tipo === 'receita')), desp = soma(lista.filter(t => t.tipo === 'despesa'));
+  const filtrando = q || cat || mem || tipo;
+  return (
+    <Card tilt={false}>
+      <div className="toolbar">
+        <input className="field grow" placeholder="Buscar por descrição, categoria ou membro" value={q} onChange={e => setQ(e.target.value)} aria-label="Buscar" />
+        <select className="field" value={tipo} onChange={e => setTipo(e.target.value)} aria-label="Tipo"><option value="">Todos os tipos</option><option value="despesa">Despesas</option><option value="receita">Receitas</option></select>
+        <select className="field" value={cat} onChange={e => setCat(e.target.value)} aria-label="Categoria"><option value="">Todas as categorias</option>{CATS.map(c => <option key={c.n}>{c.n}</option>)}</select>
+        <select className="field" value={mem} onChange={e => setMem(e.target.value)} aria-label="Membro"><option value="">Todos os membros</option>{nomesMembros.map(n => <option key={n}>{n}</option>)}</select>
+        <button className="btn p" onClick={nova}>Nova transação</button>
+      </div>
+      <div className="sub" style={{ marginBottom: 6 }}>{lista.length} lançamentos · Receitas <b className="inc">{brl(rec)}</b> · Despesas <b className="exp">{brl(desp)}</b></div>
+      {lista.length === 0
+        ? <Vazio titulo={filtrando ? 'Nada encontrado' : 'Nenhum lançamento neste mês'} texto={filtrando ? 'Tente limpar os filtros.' : 'Adicione o primeiro ou mande “gasto 50 pão” pelo WhatsApp.'} acao={filtrando ? null : 'Nova transação'} onAcao={nova} />
+        : lista.map(t => <Lancamento key={t.id} t={t} onEditar={editar} onExcluir={excluir} />)}
+    </Card>
+  );
+}
+
+/* ---------- Metas e orçamento ---------- */
+function LimiteCat({ c, gasto, limite, salvar }) {
+  const [v, setV] = useState(limite ? String(limite) : '');
+  useEffect(() => setV(limite ? String(limite) : ''), [limite]);
+  const confirmar = () => { const n = Number(String(v).replace(',', '.')); if ((n || 0) !== (limite || 0)) salvar(c.n, n); };
+  const passou = limite > 0 && gasto > limite;
+  return (
+    <Card className="c4">
+      <div className="budget">
+        <Anel pct={limite > 0 ? gasto / limite : 0} cor={passou ? 'var(--exp)' : c.c} emoji={c.e} tam={76} />
+        <div className="t">
+          <div className="n">{c.n}</div>
+          <div className="sub">{brl0(gasto)} gastos{limite > 0 && <> · <b className={passou ? 'exp' : 'inc'}>{passou ? `${brl0(gasto - limite)} acima` : `${brl0(limite - gasto)} restam`}</b></>}</div>
+          <div className="limit">
+            <input className="field" inputMode="decimal" placeholder="Limite R$" value={v} aria-label={`Limite mensal de ${c.n}`}
+              onChange={e => setV(e.target.value)} onBlur={confirmar} onKeyDown={e => e.key === 'Enter' && e.currentTarget.blur()} />
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+export function Metas({ transacoes, config, mes, salvarConfig }) {
+  const desp = transacoes.filter(t => t.tipo === 'despesa' && t.data.startsWith(mes));
+  const totD = soma(desp), limite = soma(Object.entries(config.orcamentos).filter(([k]) => k !== 'Renda'), ([, v]) => v);
+  const salvar = (nome, valor) => salvarConfig({ ...config, orcamentos: { ...config.orcamentos, [nome]: valor } });
+  return (
+    <div className="bento">
+      <Card className="c12">
+        <div className="lab">Orçamento do mês</div>
+        <div className="big">{brl0(totD)} <small>de {limite > 0 ? brl0(limite) : 'nenhum limite definido'}</small></div>
+        <div className="bar" style={{ height: 12 }}><i style={{ width: `${limite > 0 ? Math.min(totD / limite, 1) * 100 : 0}%`, background: totD > limite && limite > 0 ? 'var(--exp)' : 'var(--brand)' }} /></div>
+        <div className="sub" style={{ marginTop: 10 }}>Os limites valem para todos os meses. Digite o valor e saia do campo para salvar.</div>
+      </Card>
+      {DESPESAS.map(c => <LimiteCat key={c.n} c={c} gasto={soma(desp.filter(t => t.categoria === c.n))} limite={config.orcamentos[c.n] || 0} salvar={salvar} />)}
+    </div>
+  );
+}
+
+/* ---------- Por membro ---------- */
+export function Membros({ transacoes, config, mes, nomesMembros, salvarConfig }) {
+  const [novo, setNovo] = useState('');
+  const doMes = transacoes.filter(t => t.data.startsWith(mes));
+  const totD = soma(doMes.filter(t => t.tipo === 'despesa'));
+  const adicionar = e => { e.preventDefault(); const n = novo.trim(); if (n) { salvarConfig({ ...config, membros: [...config.membros, n] }); setNovo(''); } };
+  return (
+    <div className="bento">
+      {nomesMembros.map(n => {
+        const d = doMes.filter(t => t.membro === n && t.tipo === 'despesa'), r = doMes.filter(t => t.membro === n && t.tipo === 'receita');
+        const g = soma(d), porCat = DESPESAS.map(c => ({ c, v: soma(d.filter(t => t.categoria === c.n)) })).filter(x => x.v > 0).sort((a, b) => b.v - a.v);
+        return (
+          <Card className="c4 mcard" key={n}>
+            <div className="top"><Avatar nome={n} cor={corMembro(n)} grande /><div><div style={{ fontWeight: 800, fontSize: 17 }}>{n}</div><div className="sub">{totD > 0 ? Math.round(g / totD * 100) : 0}% dos gastos do mês</div></div></div>
+            <div className="lab">Gastou</div><div className="val exp">{brl(g)}</div>
+            <div className="bar" style={{ height: 10, marginTop: 10 }}>{porCat.map(x => <i key={x.c.n} title={x.c.n} style={{ width: `${x.v / (g || 1) * 100}%`, background: x.c.c }} />)}</div>
+            <div className="chips">{porCat.slice(0, 3).map(x => <span key={x.c.n}>{x.c.e} {x.c.n} {brl0(x.v)}</span>)}{porCat.length === 0 && <span>Sem gastos</span>}</div>
+            {r.length > 0 && <div className="sub" style={{ marginTop: 12 }}>Recebeu <b className="inc">{brl(soma(r))}</b></div>}
+            {n === 'Família' && <div className="sub" style={{ marginTop: 12 }}>Lançamentos feitos pelo WhatsApp.</div>}
+            {config.membros.includes(n) && <div className="btns"><button className="btn danger" onClick={() => confirm(`Remover ${n} da lista? Os lançamentos continuam salvos.`) && salvarConfig({ ...config, membros: config.membros.filter(m => m !== n) })}>Remover da lista</button></div>}
+          </Card>
+        );
+      })}
+      <Card className="c4" tilt={false}>
+        <h3>Adicionar membro</h3>
+        <form onSubmit={adicionar}>
+          <label className="f">Nome<input className="field" value={novo} onChange={e => setNovo(e.target.value)} placeholder="Ex.: Maria" maxLength={50} /></label>
+          <button className="btn p" type="submit">Adicionar</button>
+        </form>
+        <div className="sub" style={{ marginTop: 12 }}>Quem estiver na lista aparece ao lançar uma transação.</div>
+      </Card>
+    </div>
+  );
+}
+
+/* ---------- Assistente ---------- */
+const SUGESTOES = ['Onde posso economizar este mês?', 'Como foi o mês comparado ao anterior?', 'Quanto gastamos com alimentação?', 'Vamos fechar dentro das metas?'];
+export function Assistente({ mes }) {
+  const [msgs, setMsgs] = useState([]), [q, setQ] = useState(''), [espera, setEspera] = useState(false);
+  const fim = useRef(null);
+  useEffect(() => { fim.current?.scrollIntoView({ block: 'end' }); }, [msgs, espera]);
+  const enviar = async texto => {
+    const p = texto.trim(); if (!p || espera) return;
+    setMsgs(m => [...m, { de: 'u', t: p }]); setQ(''); setEspera(true);
+    try { const { resposta } = await api.perguntar(p, mes); setMsgs(m => [...m, { de: 'a', t: resposta }]); }
+    catch (e) { setMsgs(m => [...m, { de: 'a', t: e.message }]); }
+    setEspera(false);
+  };
+  return (
+    <Card tilt={false}>
+      <h3>Pergunte sobre as finanças da casa</h3>
+      {msgs.length === 0 && <div className="sugs">{SUGESTOES.map(s => <button key={s} onClick={() => enviar(s)}>{s}</button>)}</div>}
+      <div className="chat">
+        {msgs.map((m, i) => <div key={i} className={`msg ${m.de}`}>{m.t}</div>)}
+        {espera && <div className="msg a">Pensando…</div>}
+        <div ref={fim} />
+      </div>
+      <form className="ask" onSubmit={e => { e.preventDefault(); enviar(q); }}>
+        <input className="field" value={q} onChange={e => setQ(e.target.value)} placeholder="Ex.: quanto o João gastou com transporte?" maxLength={500} aria-label="Sua pergunta" />
+        <button className="btn p" type="submit">Perguntar</button>
+      </form>
+      <div className="sub" style={{ marginTop: 12 }}>O assistente usa os lançamentos dos últimos 3 meses e as metas. Limite de 30 perguntas por hora.</div>
+    </Card>
+  );
+}
+
+/* ---------- Formulário (gaveta lateral) ---------- */
+export function Gaveta({ tx, mes, nomesMembros, fechar, salvar }) {
+  const editando = !!tx?.id;
+  const [f, setF] = useState(() => ({ tipo: 'despesa', valor: '', descricao: '', categoria: 'Alimentação', membro: nomesMembros.find(n => n !== 'Família') || 'Família', data: `${mes}-${String(Math.min(new Date().getDate(), 28)).padStart(2, '0')}`, repetir: false, ...tx }));
+  const [erro, setErro] = useState('');
+  const set = k => e => setF({ ...f, [k]: e.target.value });
+  const enviar = async e => {
+    e.preventDefault();
+    const valor = Number(String(f.valor).replace(',', '.'));
+    if (!(valor > 0)) return setErro('Informe um valor maior que zero.');
+    setErro('');
+    await salvar({ tipo: f.tipo, valor, descricao: f.descricao.trim(), categoria: f.categoria, membro: f.membro, data: f.data }, tx?.id, f.repetir);
+  };
+  return (
+    <>
+      <div className="scrim" onClick={fechar} />
+      <form className="drawer" onSubmit={enviar} role="dialog" aria-label={editando ? 'Editar transação' : 'Nova transação'}>
+        <h2>{editando ? 'Editar transação' : 'Nova transação'}<button type="button" className="round" aria-label="Fechar" onClick={fechar}><Ico d="M18 6 6 18M6 6l12 12" /></button></h2>
+        <div className="seg">
+          <button type="button" className={f.tipo === 'despesa' ? 'on' : ''} onClick={() => setF({ ...f, tipo: 'despesa', categoria: f.categoria === 'Renda' ? 'Alimentação' : f.categoria })}>Despesa</button>
+          <button type="button" className={f.tipo === 'receita' ? 'on' : ''} onClick={() => setF({ ...f, tipo: 'receita', categoria: 'Renda' })}>Receita</button>
+        </div>
+        <label className="f">Valor (R$)<input className="field" inputMode="decimal" value={f.valor} onChange={set('valor')} placeholder="0,00" autoFocus /></label>
+        {erro && <div className="err">{erro}</div>}
+        <label className="f">Descrição<input className="field" value={f.descricao} onChange={set('descricao')} placeholder="Ex.: Supermercado" maxLength={100} /></label>
+        <label className="f">Categoria<select className="field" value={f.categoria} onChange={set('categoria')}>{CATS.map(c => <option key={c.n}>{c.n}</option>)}</select></label>
+        <label className="f">Membro<select className="field" value={f.membro} onChange={set('membro')}>{[...new Set(['Família', ...nomesMembros, f.membro])].map(n => <option key={n}>{n}</option>)}</select></label>
+        <label className="f">Data<input className="field" type="date" value={f.data} onChange={set('data')} required /></label>
+        {!editando && <label className="check"><input type="checkbox" checked={f.repetir} onChange={e => setF({ ...f, repetir: e.target.checked })} /> Repetir todo mês pelos próximos 11 meses</label>}
+        <div className="btns"><button className="btn p" type="submit">Salvar transação</button><button className="btn" type="button" onClick={fechar}>Cancelar</button></div>
+      </form>
+    </>
+  );
+}
