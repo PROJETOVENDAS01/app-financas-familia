@@ -171,10 +171,16 @@ export function Membros({ transacoes, config, mes, nomesMembros, salvarConfig })
         return (
           <Card className="c4 mcard" key={n}>
             <div className="top"><Avatar nome={n} cor={corMembro(n)} grande /><div><div style={{ fontWeight: 800, fontSize: 17 }}>{n}</div><div className="sub">{totD > 0 ? Math.round(g / totD * 100) : 0}% dos gastos do mês</div></div></div>
-            <div className="lab">Gastou</div><div className="val exp">{brl(g)}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+              <div>
+                <div className="lab">Gastou</div><div className="val exp">{brl(g)}</div>
+              </div>
+              <div>
+                <div className="lab">Recebeu</div><div className="val inc">{brl(soma(r))}</div>
+              </div>
+            </div>
             <div className="bar" style={{ height: 10, marginTop: 10 }}>{porCat.map(x => <i key={x.c.n} title={x.c.n} style={{ width: `${x.v / (g || 1) * 100}%`, background: x.c.c }} />)}</div>
             <div className="chips">{porCat.slice(0, 3).map(x => <span key={x.c.n}>{x.c.e} {x.c.n} {brl0(x.v)}</span>)}{porCat.length === 0 && <span>Sem gastos</span>}</div>
-            {r.length > 0 && <div style={{ display: 'flex', gap: 16, marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--rule)' }}><div style={{ flex: 1 }}><div className="lab">Recebeu</div><div className="val inc">{brl(soma(r))}</div></div></div>}
             {n === 'Família' && <div className="sub" style={{ marginTop: 12 }}>Lançamentos feitos pelo WhatsApp.</div>}
             {config.membros.includes(n) && <div className="btns"><button className="btn danger" onClick={() => confirm(`Remover ${n} da lista? Os lançamentos continuam salvos.`) && salvarConfig({ ...config, membros: config.membros.filter(m => m !== n) })}>Remover da lista</button></div>}
           </Card>
