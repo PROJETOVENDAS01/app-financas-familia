@@ -100,6 +100,30 @@ export default function Overview({ transacoes, config, mes, ir, nomesMembros }) 
         </div>
       </Card>
 
+      <Card className="c12">
+        <h3>Gastos por tipo</h3>
+        {desp.length === 0 ? <div className="sub">Sem gastos neste mês.</div> : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
+            {(() => {
+              const subs = {};
+              desp.forEach(t => {
+                const key = t.subcategoria || t.categoria;
+                subs[key] = (subs[key] || 0) + t.valor;
+              });
+              return Object.entries(subs).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([sub, v]) => (
+                <div key={sub} style={{ padding: 12, border: '1px solid var(--rule)', borderRadius: 12, background: 'var(--card)' }}>
+                  <div style={{ fontSize: 13, color: 'var(--sub)', marginBottom: 8 }}>{sub}</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>{brl0(v)}</div>
+                  <div style={{ height: 4, background: 'var(--track)', borderRadius: 2, marginTop: 8, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${v / Math.max(...Object.values(subs)) * 100}%`, background: 'var(--brand)' }} />
+                  </div>
+                </div>
+              ));
+            })()}
+          </div>
+        )}
+      </Card>
+
       <Card className="c4">
         <h3>Por membro <button className="link" onClick={() => ir('membros')}>Ver</button></h3>
         {porMembro.length === 0 && <div className="sub">Sem gastos neste mês.</div>}
