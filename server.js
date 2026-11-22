@@ -46,7 +46,10 @@ app.post('/webhook/whatsapp', async (req, res) => {
   const { data } = req.body;
   if (!data || !data.message) return;
 
-  const { remoteJid, messageType } = data.message;
+  const jid = data.key?.remoteJid;
+  if (!jid) return;
+  const numeroRemetente = jid.split('@')[0];
+  const { messageType } = data.message;
 
   // Evolution v2 pode enviar em conversation, v1 em text
   let text = data.message.text || data.message.conversation;
@@ -78,7 +81,7 @@ app.post('/webhook/whatsapp', async (req, res) => {
     fs.writeFileSync(TRANSACOES_FILE, JSON.stringify(data_obj, null, 2));
     
     // Responder
-    await enviarWhatsApp(WHATSAPP_NUMBER, `✅ ${tipo === 'despesa' ? '📤' : '📥'} R$ ${valor.toFixed(2)} em ${categoria} registrado!`);
+    await enviarWhatsApp(numeroRemetente, `✅ ${tipo === 'despesa' ? '📤' : '📥'} R$ ${valor.toFixed(2)} em ${categoria} registrado!`);
     return;
   }
   
@@ -98,12 +101,12 @@ app.post('/webhook/whatsapp', async (req, res) => {
     const saldo = receitas - despesas;
     
     const msg = `📊 *Este Mês*\n📥 Receitas: R$ ${receitas.toFixed(2)}\n📤 Despesas: R$ ${despesas.toFixed(2)}\n💰 Saldo: R$ ${saldo.toFixed(2)}`;
-    await enviarWhatsApp(WHATSAPP_NUMBER, msg);
+    await enviarWhatsApp(numeroRemetente, msg);
     return;
   }
   
   // Padrão
-  await enviarWhatsApp(WHATSAPP_NUMBER, `💡 Use: "gasto 50 comida" ou "receita 1000 salário"\nOu peça: "resumo", "saldo", "gastos"`);
+  await enviarWhatsApp(numeroRemetente, `💡 Use: "gasto 50 comida" ou "receita 1000 salário"\nOu peça: "resumo", "saldo", "gastos"`);
 });
 
 async function enviarWhatsApp(numero, mensagem) {
