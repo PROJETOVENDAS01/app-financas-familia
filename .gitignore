@@ -1,6 +1,9 @@
 .env
+.env.local
 node_modules/
-transacoes.json
-server.log
 dist/
+build/
+*.log
+.DS_Store
+transacoes.json
 *.bak
