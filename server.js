@@ -232,8 +232,12 @@ app.delete('/api/fixos/:id', (req, res) => {
 // Notificações do banco: o celular (MacroDroid/Tasker) manda o texto e o app registra a compra sozinho (ver notificacoes.js).
 // NOTIF_TOKENS="token1=THIAGO BONI,token2=CAROL BONI": cada celular tem o seu token, e a compra entra no nome do dono.
 const NOTIF_TOKENS = Object.fromEntries((process.env.NOTIF_TOKENS || '').split(',').map(p => { const i = p.indexOf('='); return [p.slice(0, i).trim(), p.slice(i + 1).trim()]; }).filter(([t, m]) => t && m));
-// NOTIF_ENTRADAS="HAPVIDA=Comissão Hapvida,AMIL=Comissão Amil": dinheiro recebido dessas instituições (o nome aparece na notificação) entra sempre como receita
-const NOTIF_ENTRADAS = Object.fromEntries((process.env.NOTIF_ENTRADAS || '').split(',').map(p => { const i = p.indexOf('='); return [p.slice(0, i).trim().normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(), { descricao: p.slice(i + 1).trim() }]; }).filter(([k, v]) => k && v.descricao));
+// NOTIF_ENTRADAS="TCH PAY INCENTIVE=Comissão CDN|Bônus,AMIL=Comissão Amil": dinheiro recebido dessas instituições (o nome aparece na notificação) entra sempre como receita.
+// Depois do "=" vem a descrição e, opcional, "|" e a subcategoria de Renda (Salário, Freelance, Bônus, Outros; padrão Outros)
+const NOTIF_ENTRADAS = Object.fromEntries((process.env.NOTIF_ENTRADAS || '').split(',').map(p => {
+  const i = p.indexOf('='), [descricao, sub] = p.slice(i + 1).split('|').map(s => s.trim());
+  return [p.slice(0, i).trim().normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(), { descricao, subcategoria: sub || undefined }];
+}).filter(([k, v]) => k && v.descricao));
 const notificacoes = require('./notificacoes')({ ler, gravar, claudeTexto, entradas: NOTIF_ENTRADAS, categoriasAtivas, parcelar, hoje: () => hojeISO(), membros: () => [...new Set([...(ler().config?.membros || []), ...Object.values(MEMBROS_WHATSAPP)])] });
 const avisarMembro = (membro, msg) => Promise.all(Object.keys(MEMBROS_WHATSAPP).filter(n => MEMBROS_WHATSAPP[n] === membro).map(n => enviarWhatsApp(n, msg)));
 
