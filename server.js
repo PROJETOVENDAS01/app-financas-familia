@@ -240,10 +240,16 @@ const avisarMembro = (membro, msg) => Promise.all(Object.keys(MEMBROS_WHATSAPP).
 app.use('/webhook/notificacao', express.text({ type: 'text/*', limit: '10kb' })); // o app do celular pode mandar só o texto
 app.post('/webhook/notificacao', (req, res) => {
   if (!Object.keys(NOTIF_TOKENS).length) return res.status(503).json({ erro: 'NOTIF_TOKENS não configurado' });
-  const token = req.get('x-token') || req.body?.token || '';
+  // token: cabeçalho x-token, "Authorization: Bearer", ou campo "token" do corpo
+  const token = req.get('x-token') || req.get('Authorization')?.replace(/^Bearer\s+/i, '') || req.body?.token || '';
   const membro = Object.entries(NOTIF_TOKENS).find(([t]) => crypto.timingSafeEqual(hash(String(token)), hash(t)))?.[1];
   if (!membro) return res.status(401).json({ erro: 'não autorizado' });
-  const texto = (typeof req.body === 'string' ? req.body : [req.body?.titulo, req.body?.texto].filter(Boolean).join(' — ')).trim().slice(0, 1000);
+  // texto: corpo puro, {titulo, texto}, campos comuns (title/text/body/message...) ou, na dúvida, o JSON inteiro (a IA lê do mesmo jeito)
+  const b = req.body;
+  const CAMPOS = ['titulo', 'title', 'texto', 'text', 'bigText', 'body', 'message', 'content'];
+  const achados = b && typeof b === 'object' ? CAMPOS.map(k => b[k]).filter(v => typeof v === 'string' && v.trim()) : [];
+  const temCampo = b && typeof b === 'object' && CAMPOS.some(k => k in b); // formato conhecido, mas vazio: não vale gastar a IA
+  const texto = (typeof b === 'string' ? b : achados.length ? achados.join(' — ') : temCampo ? '' : b && Object.keys(b).length ? JSON.stringify({ ...b, token: undefined }) : '').trim().slice(0, 1000);
   if (!texto) return res.status(400).json({ erro: 'texto vazio' });
   res.json({ ok: true }); // responde já: o celular não precisa esperar a IA
   notificacoes.registrar(texto, membro)
