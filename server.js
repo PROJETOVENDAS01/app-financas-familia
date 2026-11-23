@@ -282,7 +282,7 @@ async function perguntarAoAssistente(pergunta, { mes, historico = [] } = {}) {
   try {
     const r = await comRetentativa(() => axios.post('https://api.anthropic.com/v1/messages', {
       model: CLAUDE_MODEL,
-      max_tokens: 900,
+      max_tokens: 4000, // o modelo pode "pensar" antes de responder e isso conta no limite: com 900 a análise acabava sem texto
       system: `Você é o assistente financeiro de uma família brasileira e conversa pelo painel e pelo WhatsApp. Responda em português, de forma direta e acolhedora, em até 150 palavras, com valores em R$.
 - Use SOMENTE os dados fornecidos. Prefira os totais de resumoMensal (já calculados); para outros recortes (uma pessoa, uma subcategoria, o cartão, um período), some os lançamentos com cuidado e mostre os valores.
 - "No cartão" = lançamentos marcados [cartão]. [pagamento da fatura] é o pagamento do cartão, não é gasto novo. Parcelas futuras já estão nos lançamentos.
@@ -293,7 +293,10 @@ async function perguntarAoAssistente(pergunta, { mes, historico = [] } = {}) {
     }, { headers: { 'x-api-key': CLAUDE_API_KEY, 'anthropic-version': '2023-06-01' }, timeout: 20000 })); // 2 tentativas de 20 s cabem antes do proxy cortar a conexão (~60 s) e devolver um 502 sem mensagem
     console.log(`🤖 Assistente respondeu em ${Date.now() - inicio} ms (${atual.length} caracteres de contexto)`);
     const texto = textoDoClaude(r);
-    if (!texto) throw falha(502, 'O assistente não devolveu resposta. Tente de novo.');
+    if (!texto) {
+      console.warn('⚠️ Assistente sem texto:', r.data.stop_reason, (r.data.content || []).map(b => b.type), r.data.usage);
+      throw falha(502, 'O assistente não devolveu resposta. Tente de novo.');
+    }
     return texto;
   } catch (err) {
     if (err.propria) throw err;
