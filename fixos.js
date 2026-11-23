@@ -63,9 +63,17 @@ function aplicarEdicao(obj, f, mesAtual, taxas = {}) {
   }
 }
 
-// Apagou a conta: remove só o que ainda não venceu; o que já passou fica no histórico
-function removerGerados(obj, fixoId, hoje) {
-  obj.transacoes = obj.transacoes.filter(t => !(t.fixoId === fixoId && t.data >= hoje));
+// Apagou a conta: remove os lançamentos dela do mês atual em diante (mesmo os que já venceram neste mês);
+// meses anteriores ficam como histórico
+function removerGerados(obj, fixoId, mesAtual) {
+  obj.transacoes = obj.transacoes.filter(t => !(t.fixoId === fixoId && t.data.slice(0, 7) >= mesAtual));
+}
+
+// Lançamentos de uma conta fixa que já foi excluída (do mês atual em diante): sobras de quando a exclusão deixava o mês para trás
+function limparOrfas(obj, mesAtual) {
+  const ids = new Set((obj.fixos || []).map(f => f.id)), antes = obj.transacoes.length;
+  obj.transacoes = obj.transacoes.filter(t => !(t.fixoId && !ids.has(t.fixoId) && t.data.slice(0, 7) >= mesAtual));
+  return obj.transacoes.length !== antes;
 }
 
 module.exports = function criarFixos({ ler, gravar, enviarWhatsApp, membrosWhatsapp, allowed, botNumber, horaAviso = 8 }) {
@@ -179,7 +187,8 @@ module.exports = function criarFixos({ ler, gravar, enviarWhatsApp, membrosWhats
       const precisam = (ler().fixos || []).filter(f => f.ativo && f.moeda && !(f.meses || []).includes(mes)).map(f => f.moeda);
       const taxas = await taxasDe(precisam);
       const obj = ler();
-      if (gerarFixosDoMes(obj, mes, taxas)) gravar(obj);
+      const gerou = gerarFixosDoMes(obj, mes, taxas), limpou = limparOrfas(obj, mes);
+      if (gerou || limpou) gravar(obj);
     } catch (e) { console.error('❌ Erro ao gerar contas fixas:', e.message); }
     avisarVencimentos().catch(e => console.error('❌ Erro ao avisar vencimentos:', e.message));
   }
@@ -187,6 +196,6 @@ module.exports = function criarFixos({ ler, gravar, enviarWhatsApp, membrosWhats
   // Confere a cada minuto (e logo ao subir, para recuperar o dia se o servidor reiniciou)
   const iniciar = () => { setTimeout(ciclo, 5000); setInterval(ciclo, 60000); };
 
-  return { limparFixo, gerarFixosDoMes, aplicarEdicao, removerGerados, avisarVencimentos, responderValor, taxasDe, mesAtual, hoje: () => agoraSP().slice(0, 10), iniciar };
+  return { limparFixo, gerarFixosDoMes, aplicarEdicao, removerGerados, limparOrfas, avisarVencimentos, responderValor, taxasDe, mesAtual, hoje: () => agoraSP().slice(0, 10), iniciar };
 };
 module.exports.dataDoMes = dataDoMes;

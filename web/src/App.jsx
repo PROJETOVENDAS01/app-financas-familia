@@ -92,7 +92,7 @@ export default function App() {
   });
   const excluir = t => confirm(`Excluir “${t.descricao || t.categoria}”?`) && executar(async () => { await api.excluir(t.id); avisar('Transação excluída'); });
   const salvarFixo = (dados, id) => executar(async () => { if (id) await api.editarFixo(id, dados); else await api.criarFixo(dados); avisar(id ? 'Conta fixa atualizada' : 'Conta fixa criada'); });
-  const excluirFixo = f => confirm(`Excluir “${f.descricao}”? Os lançamentos que já venceram continuam salvos.`) && executar(async () => { await api.excluirFixo(f.id); avisar('Conta fixa excluída'); });
+  const excluirFixo = f => confirm(`Excluir “${f.descricao}”? Os lançamentos deste mês e dos próximos também saem; os dos meses anteriores continuam no histórico.`) && executar(async () => { await api.excluirFixo(f.id); avisar('Conta fixa excluída'); });
   const salvarConfig = c => { setConfig(c); executar(async () => { await api.salvarConfig(c); avisar('Salvo'); }); };
 
   if (!logado) return <Login erro={erroLogin} aoEntrar={c => { salvarChave(c); setErroLogin(''); setLogado(true); }} />;

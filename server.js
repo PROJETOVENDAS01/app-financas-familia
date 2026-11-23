@@ -223,7 +223,7 @@ app.delete('/api/fixos/:id', (req, res) => {
   const obj = ler();
   const id = Number(req.params.id);
   obj.fixos = (obj.fixos || []).filter(x => x.id !== id);
-  fixos.removerGerados(obj, id, fixos.hoje());
+  fixos.removerGerados(obj, id, fixos.mesAtual());
   gravar(obj);
   res.json({ success: true });
 });

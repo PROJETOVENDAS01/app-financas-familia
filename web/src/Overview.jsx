@@ -53,13 +53,15 @@ export default function Overview({ transacoes, config, mes, ir, nomesMembros }) 
   const grupos = fora.length ? [...cats, { n: 'Outros', e: '🏷️', c: '#94a3b8', fora: true }] : cats;
 
   // gastos no cartão de crédito do mês (parcelas entram no mês delas), por categoria e subcategoria
+  const infoCat = n => cats.find(c => c.n === n) || { e: '🏷️', c: '#94a3b8' };
+  // subcategoria que foi excluída da lista da categoria deixa de aparecer como linha: o valor vai para "Sem subcategoria" (o total não muda)
+  const subDe = t => ((infoCat(t.categoria).sub || []).includes(t.subcategoria) ? t.subcategoria : 'Sem subcategoria');
   const noCartao = desp.filter(t => t.cartao), parcelados = noCartao.filter(t => t.parcelas > 1);
   const porCatCartao = {};
-  noCartao.forEach(t => { const c = porCatCartao[t.categoria] ||= {}, k = t.subcategoria || 'Sem subcategoria'; c[k] = (c[k] || 0) + t.valor; });
+  noCartao.forEach(t => { const c = porCatCartao[t.categoria] ||= {}, k = subDe(t); c[k] = (c[k] || 0) + t.valor; });
   const gruposCartao = Object.entries(porCatCartao)
     .map(([n, subs]) => ({ n, subs: Object.entries(subs).sort((a, b) => b[1] - a[1]), total: Object.values(subs).reduce((s, v) => s + v, 0) }))
     .sort((a, b) => b.total - a.total);
-  const infoCat = n => cats.find(c => c.n === n) || { e: '🏷️', c: '#94a3b8' };
   const porMembro = nomesMembros.map(n => ({ n, v: soma(desp.filter(t => t.membro === n)) })).filter(m => m.v > 0 || config.membros.includes(m.n));
   const maxM = Math.max(...porMembro.map(m => m.v), 1);
 
@@ -100,7 +102,7 @@ export default function Overview({ transacoes, config, mes, ir, nomesMembros }) 
         const itens = c.fora ? fora : desp.filter(t => t.categoria === c.n);
         const g = soma(itens), l = config.orcamentos[c.n] || 0, passou = l > 0 && g > l;
         const porSub = {};
-        itens.forEach(t => { const k = (c.fora ? t.categoria : t.subcategoria) || 'Sem subcategoria'; porSub[k] = (porSub[k] || 0) + t.valor; });
+        itens.forEach(t => { const k = c.fora ? t.categoria : subDe(t); porSub[k] = (porSub[k] || 0) + t.valor; });
         const linhas = Object.entries(porSub).sort((a, b) => b[1] - a[1]);
         return (
           <Card className="c4 glass" key={c.n} style={{ '--c': c.c }}>
