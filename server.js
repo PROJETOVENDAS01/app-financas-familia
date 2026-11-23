@@ -645,6 +645,10 @@ app.post('/webhook/whatsapp', async (req, res) => {
     }
   }
 
+  // Resposta à pergunta de categoria de uma compra/Pix vindo do banco ("ok", "2" ou "Saúde")
+  const respostaCategoria = notificacoes.responderCategoria(text, membroDe(numeroRemetente));
+  if (respostaCategoria) { await enviarWhatsApp(numeroRemetente, respostaCategoria); return; }
+
   // "Paguei a luz" marca a conta fixa como paga; "pendentes" lista o que falta (antes da resposta de valor, que também reconheceria "luz 187")
   const respostaPagamento = fixos.responderPagamento(text);
   if (respostaPagamento) { await enviarWhatsApp(numeroRemetente, respostaPagamento); return; }
