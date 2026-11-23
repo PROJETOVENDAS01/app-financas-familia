@@ -117,7 +117,13 @@ app.put('/api/transacoes/:id', (req, res) => {
   const obj = ler();
   const i = obj.transacoes.findIndex(x => x.id === Number(req.params.id));
   if (i < 0) return res.status(404).json({ erro: 'não encontrada' });
-  obj.transacoes[i] = { ...obj.transacoes[i], ...t }; // mantém id e origem
+  const antes = obj.transacoes[i];
+  obj.transacoes[i] = { ...antes, ...t }; // mantém id e origem
+  if (antes.variavel && !antes.confirmado && t.valor !== antes.valor) { // corrigiu o valor de uma conta variável: está confirmado
+    Object.assign(obj.transacoes[i], { confirmado: true, aguardandoValor: false });
+    const f = (obj.fixos || []).find(x => x.id === antes.fixoId);
+    if (f?.variavel) f.valor = t.valor; // o próximo mês já começa estimando este valor
+  }
   gravar(obj);
   res.json({ success: true });
 });
@@ -500,6 +506,10 @@ app.post('/webhook/whatsapp', async (req, res) => {
       return;
     }
   }
+
+  // Resposta a um aviso de conta variável ("luz 187,40", "187,40" ou "ok"): grava o valor real
+  const respostaValor = fixos.responderValor(text);
+  if (respostaValor) { await enviarWhatsApp(numeroRemetente, respostaValor); return; }
 
   // Comando: "resumo" ou "saldo" (local, sem gastar chamada ao Claude)
   if (/^(resumo|saldo|gastos)\s*$/.test(mensagem)) {
