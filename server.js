@@ -259,7 +259,8 @@ app.post('/webhook/notificacao', (req, res) => {
   const texto = (typeof b === 'string' ? b : achados.length ? achados.join(' — ') : temCampo ? '' : b && Object.keys(b).length ? JSON.stringify({ ...b, token: undefined }) : '').trim().slice(0, 1000);
   if (!texto) return res.status(400).json({ erro: 'texto vazio' });
   res.json(ack); // responde já: o celular não precisa esperar a IA
-  notificacoes.registrar(texto, membro)
+  const fonte = b && typeof b === 'object' ? String(b.source_name || b.source || '').slice(0, 60) : ''; // app que gerou a notificação
+  notificacoes.registrar(texto, membro, fonte)
     .then(r => { console.log(`🏦 Notificação (${membro}): ${r.status}`); return r.msg && avisarMembro(membro, r.msg); })
     .catch(e => console.error('❌ Erro na notificação do banco:', e.message));
 });
