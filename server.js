@@ -239,6 +239,8 @@ const NOTIF_ENTRADAS = Object.fromEntries((process.env.NOTIF_ENTRADAS || '').spl
   return [p.slice(0, i).trim().normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(), { descricao, subcategoria: sub || undefined }];
 }).filter(([k, v]) => k && v.descricao));
 const notificacoes = require('./notificacoes')({ ler, gravar, claudeTexto, entradas: NOTIF_ENTRADAS, categoriasAtivas, parcelar, hoje: () => hojeISO(), membros: () => [...new Set([...(ler().config?.membros || []), ...Object.values(MEMBROS_WHATSAPP)])] });
+// Fatura do cartão (PDF ou prints com "fatura" na legenda): registra o que faltar e confere o resto (ver importarFatura.js)
+const importarFatura = require('./importarFatura')({ ler, gravar, claudeArquivo, categoriasAtivas, chaveLoja: notificacoes.chaveLoja, hoje: () => hojeISO() });
 const avisarMembro = (membro, msg) => Promise.all(Object.keys(MEMBROS_WHATSAPP).filter(n => MEMBROS_WHATSAPP[n] === membro).map(n => enviarWhatsApp(n, msg)));
 
 app.use('/webhook/notificacao', express.text({ type: 'text/*', limit: '10kb' })); // o app do celular pode mandar só o texto
@@ -564,6 +566,26 @@ app.post('/webhook/whatsapp', async (req, res) => {
 
     try {
       const { buffer } = await baixarMidia(req.body, data);
+
+      // "fatura" na legenda: lê todas as compras do cartão em vez de um lançamento só
+      if (/fatura/.test((media.caption || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase())) {
+        const mime = tipoDoArquivo(buffer);
+        if (!mime) { await enviarWhatsApp(numeroRemetente, '😕 Esse arquivo não é um PDF nem uma imagem. Mande a fatura em PDF ou prints das páginas.'); return; }
+        if (mime === 'application/pdf' && buffer.toString('latin1').includes('/Encrypt')) {
+          await enviarWhatsApp(numeroRemetente, '🔒 Esse PDF está protegido por senha e eu não consigo abrir. Abra no celular, salve ou imprima como PDF sem senha e mande de novo, ou mande prints das páginas.');
+          return;
+        }
+        await enviarWhatsApp(numeroRemetente, '📄 Lendo a fatura… pode levar um minutinho.');
+        try {
+          const r = await importarFatura.importar(buffer, mime, membroDe(numeroRemetente));
+          await enviarWhatsApp(numeroRemetente, r.status === 'ok' ? r.msg : '😕 Não consegui ler compras nesse arquivo. Confira se é a fatura do cartão (com a lista de lançamentos) e tente de novo, ou mande prints mais nítidos.');
+        } catch (err) {
+          console.error('❌ Erro ao importar fatura:', err.response?.status, JSON.stringify(err.response?.data) || err.message);
+          await enviarWhatsApp(numeroRemetente, '❌ Não consegui processar a fatura agora. Tenta de novo em instantes.');
+        }
+        return;
+      }
+
       const transacao = await processarImagemComVisao(buffer, media.caption || '');
 
       if (!transacao) {
@@ -645,6 +667,10 @@ app.post('/webhook/whatsapp', async (req, res) => {
       return;
     }
   }
+
+  // "desfazer" logo depois de importar uma fatura: apaga só o que a importação criou
+  const respostaDesfazer = importarFatura.desfazer(text, membroDe(numeroRemetente));
+  if (respostaDesfazer) { await enviarWhatsApp(numeroRemetente, respostaDesfazer); return; }
 
   // Resposta à pergunta de categoria de uma compra/Pix vindo do banco ("ok", "2" ou "Saúde")
   const respostaCategoria = notificacoes.responderCategoria(text, membroDe(numeroRemetente));
@@ -747,6 +773,16 @@ async function claudeTexto(system, usuario, maxTokens = 3000) {
   const r = await comRetentativa(() => axios.post('https://api.anthropic.com/v1/messages', {
     model: CLAUDE_MODEL, max_tokens: maxTokens, system, messages: [{ role: 'user', content: usuario }]
   }, { headers: { 'x-api-key': CLAUDE_API_KEY, 'anthropic-version': '2023-06-01' }, timeout: 20000 }));
+  return textoDoClaude(r);
+}
+
+// Pergunta ao Claude sobre um arquivo (PDF ou imagem) e devolve o texto. Para a fatura do cartão, que é longa: muitos tokens e tempo.
+async function claudeArquivo(system, buffer, mime, texto, maxTokens = 12000) {
+  if (!CLAUDE_API_KEY) throw new Error('CLAUDE_API_KEY não definida');
+  const arquivo = { type: mime === 'application/pdf' ? 'document' : 'image', source: { type: 'base64', media_type: mime, data: buffer.toString('base64') } };
+  const r = await comRetentativa(() => axios.post('https://api.anthropic.com/v1/messages', {
+    model: CLAUDE_MODEL, max_tokens: maxTokens, system, messages: [{ role: 'user', content: [arquivo, { type: 'text', text: texto }] }]
+  }, { headers: { 'x-api-key': CLAUDE_API_KEY, 'anthropic-version': '2023-06-01' }, timeout: 120000 }));
   return textoDoClaude(r);
 }
 
