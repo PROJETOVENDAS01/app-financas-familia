@@ -147,7 +147,7 @@ app.put('/api/transacoes/:id', (req, res) => {
   if (antes.variavel && !antes.confirmado && t.valor !== antes.valor) { // corrigiu o valor de uma conta variável: está confirmado
     Object.assign(obj.transacoes[i], { confirmado: true, aguardandoValor: false });
     const f = (obj.fixos || []).find(x => x.id === antes.fixoId);
-    if (f?.variavel) f.valor = t.valor; // o próximo mês já começa estimando este valor
+    if (f?.variavel && !f.moeda) f.valor = t.valor; // o próximo mês já começa estimando este valor
   }
   gravar(obj);
   res.json({ success: true });
@@ -181,28 +181,42 @@ const fixos = require('./fixos')({
 
 app.get('/api/fixos', (req, res) => res.json(ler().fixos || []));
 
-app.post('/api/fixos', (req, res) => {
-  const f = fixos.limparFixo(req.body);
-  if (!f) return res.status(400).json({ erro: 'confira tipo, valor, descrição e dia (1 a 31)' });
-  const obj = ler();
-  const id = Date.now();
-  obj.fixos = [...(obj.fixos || []), { id, ...f, meses: [] }];
-  fixos.gerarFixosDoMes(obj, fixos.mesAtual()); // já aparece neste mês
-  gravar(obj);
-  res.json({ success: true, id });
+app.post('/api/fixos', async (req, res) => {
+  try {
+    const f = fixos.limparFixo(req.body);
+    if (!f) return res.status(400).json({ erro: 'confira tipo, valor, descrição e dia (1 a 31)' });
+    const taxas = await fixos.taxasDe([f.moeda]); // conta em dólar/euro/libra: cotação de agora (busca antes de ler o arquivo)
+    if (f.moeda && !taxas[f.moeda]) return res.status(503).json({ erro: 'Não consegui buscar a cotação agora. Tente de novo ou use o valor em reais.' });
+    const obj = ler();
+    const id = Date.now();
+    obj.fixos = [...(obj.fixos || []), { id, ...f, meses: [] }];
+    fixos.gerarFixosDoMes(obj, fixos.mesAtual(), taxas); // já aparece neste mês
+    gravar(obj);
+    res.json({ success: true, id });
+  } catch (e) {
+    console.error('❌ Erro ao criar conta fixa:', e.message);
+    res.status(500).json({ erro: 'Erro ao salvar. Tente de novo.' });
+  }
 });
 
-app.put('/api/fixos/:id', (req, res) => {
-  const f = fixos.limparFixo(req.body);
-  if (!f) return res.status(400).json({ erro: 'confira tipo, valor, descrição e dia (1 a 31)' });
-  const obj = ler();
-  const i = (obj.fixos || []).findIndex(x => x.id === Number(req.params.id));
-  if (i < 0) return res.status(404).json({ erro: 'não encontrada' });
-  obj.fixos[i] = { ...obj.fixos[i], ...f }; // mantém id e meses já gerados
-  fixos.aplicarEdicao(obj, obj.fixos[i], fixos.mesAtual());
-  fixos.gerarFixosDoMes(obj, fixos.mesAtual()); // se estava pausada e foi reativada
-  gravar(obj);
-  res.json({ success: true });
+app.put('/api/fixos/:id', async (req, res) => {
+  try {
+    const f = fixos.limparFixo(req.body);
+    if (!f) return res.status(400).json({ erro: 'confira tipo, valor, descrição e dia (1 a 31)' });
+    const taxas = await fixos.taxasDe([f.moeda]);
+    if (f.moeda && !taxas[f.moeda]) return res.status(503).json({ erro: 'Não consegui buscar a cotação agora. Tente de novo ou use o valor em reais.' });
+    const obj = ler();
+    const i = (obj.fixos || []).findIndex(x => x.id === Number(req.params.id));
+    if (i < 0) return res.status(404).json({ erro: 'não encontrada' });
+    obj.fixos[i] = { ...obj.fixos[i], ...f }; // mantém id e meses já gerados
+    fixos.aplicarEdicao(obj, obj.fixos[i], fixos.mesAtual(), taxas);
+    fixos.gerarFixosDoMes(obj, fixos.mesAtual(), taxas); // se estava pausada e foi reativada
+    gravar(obj);
+    res.json({ success: true });
+  } catch (e) {
+    console.error('❌ Erro ao editar conta fixa:', e.message);
+    res.status(500).json({ erro: 'Erro ao salvar. Tente de novo.' });
+  }
 });
 
 app.delete('/api/fixos/:id', (req, res) => {
