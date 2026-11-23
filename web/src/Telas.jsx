@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
-import { Card, Anel, Avatar, Lancamento, Vazio, Ico } from './ui.jsx';
+import { Card, Anel, Avatar, Lancamento, Vazio, Ico, Texto } from './ui.jsx';
 import { CATS, DESPESAS, catInfo, brl, brl0, soma, corMembro, addMes } from './util.js';
 import { api } from './api.js';
 
@@ -229,7 +229,7 @@ export function Assistente({ mes }) {
       <h3>Pergunte sobre as finanças da casa</h3>
       {msgs.length === 0 && <div className="sugs">{SUGESTOES.map(s => <button key={s} onClick={() => enviar(s)}>{s}</button>)}</div>}
       <div className="chat">
-        {msgs.map((m, i) => <div key={i} className={`msg ${m.de}`}>{m.t}</div>)}
+        {msgs.map((m, i) => <div key={i} className={`msg ${m.de}`}><Texto t={m.t} /></div>)}
         {espera && <div className="msg a">Pensando…</div>}
         <div ref={fim} />
       </div>

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Card, Anel, Avatar, Lancamento, Vazio } from './ui.jsx';
+import { Card, Anel, Avatar, Lancamento, Vazio, Texto } from './ui.jsx';
 import { DESPESAS, brl, brl0, hoje, mesAtual, diasNoMes, soma, corMembro, memo } from './util.js';
 import { api } from './api.js';
 
@@ -89,7 +89,7 @@ export default function Overview({ transacoes, config, mes, ir, nomesMembros }) 
       <Card className="c4 ai">
         <div className="spark"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.2 6.3L21 11l-6.8 2.7L12 20l-2.2-6.3L3 11l6.8-2.7z" /></svg></div>
         <div className="lab" style={{ marginBottom: 6 }}>Assistente</div>
-        {insight ? <p>{insight}</p> : <p>Peça uma análise do mês e receba uma dica prática com base nos seus lançamentos.</p>}
+        {insight ? <p><Texto t={insight} /></p> : <p>Peça uma análise do mês e receba uma dica prática com base nos seus lançamentos.</p>}
         {erro && <div className="err" style={{ marginTop: 10 }}>{erro}</div>}
         <div className="btns">
           <button className="btn p" onClick={gerar} disabled={carregando}>{carregando ? 'Analisando…' : insight ? 'Gerar nova análise' : 'Analisar meu mês'}</button>

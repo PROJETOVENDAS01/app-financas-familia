@@ -62,7 +62,10 @@ export function Lancamento({ t, onEditar, onExcluir }) {
   );
 }
 
-export const Ico = ({ d, size = 18 }) => (
+// Respostas do assistente vêm no formato do WhatsApp: *negrito* e listas com "-"
+export const Texto = ({ t }) => String(t || '').replace(/^- /gm, '• ').split(/\*([^*\n]+)\*/g).map((p, i) => (i % 2 ? <b key={i}>{p}</b> : p));
+
+export const Ico =({ d, size = 18 }) => (
   <svg className="ic" style={{ width: size, height: size }} viewBox="0 0 24 24" aria-hidden="true"><path d={d} /></svg>
 );
 
