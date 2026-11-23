@@ -51,6 +51,15 @@ export default function Overview({ transacoes, config, mes, ir, nomesMembros }) 
   const cats = config.categorias?.length ? config.categorias : DESPESAS;
   const fora = desp.filter(t => !cats.some(c => c.n === t.categoria)); // gasto de categoria que não existe mais na lista
   const grupos = fora.length ? [...cats, { n: 'Outros', e: '🏷️', c: '#94a3b8', fora: true }] : cats;
+
+  // gastos no cartão de crédito do mês (parcelas entram no mês delas), por categoria e subcategoria
+  const noCartao = desp.filter(t => t.cartao), parcelados = noCartao.filter(t => t.parcelas > 1);
+  const porCatCartao = {};
+  noCartao.forEach(t => { const c = porCatCartao[t.categoria] ||= {}, k = t.subcategoria || 'Sem subcategoria'; c[k] = (c[k] || 0) + t.valor; });
+  const gruposCartao = Object.entries(porCatCartao)
+    .map(([n, subs]) => ({ n, subs: Object.entries(subs).sort((a, b) => b[1] - a[1]), total: Object.values(subs).reduce((s, v) => s + v, 0) }))
+    .sort((a, b) => b.total - a.total);
+  const infoCat = n => cats.find(c => c.n === n) || { e: '🏷️', c: '#94a3b8' };
   const porMembro = nomesMembros.map(n => ({ n, v: soma(desp.filter(t => t.membro === n)) })).filter(m => m.v > 0 || config.membros.includes(m.n));
   const maxM = Math.max(...porMembro.map(m => m.v), 1);
 
@@ -114,6 +123,33 @@ export default function Overview({ transacoes, config, mes, ir, nomesMembros }) 
           </Card>
         );
       })}
+
+      <Card className="c12 glass" style={{ '--c': '#8b5cf6' }}>
+        <div className="gc-hd" style={{ justifyContent: 'space-between' }}>
+          <div>
+            <h3 style={{ margin: 0 }}>Cartão de crédito</h3>
+            <div className="gc-v">{noCartao.length} {noCartao.length === 1 ? 'compra' : 'compras'}{parcelados.length > 0 && ` · ${brl0(soma(parcelados))} em ${parcelados.length} ${parcelados.length === 1 ? 'parcela' : 'parcelas'} deste mês`}</div>
+          </div>
+          <b className="exp" style={{ fontSize: 26 }}>{brl(soma(noCartao))}</b>
+        </div>
+        {gruposCartao.length === 0
+          ? <div className="gc-sub"><div className="gc-empty">Nenhuma compra no cartão neste mês. Diga “paguei 50 no cartão” ou “comprei um tênis em 3x” no WhatsApp.</div></div>
+          : (
+            <div className="gc-sub" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 18 }}>
+              {gruposCartao.map(g => (
+                <div key={g.n}>
+                  <div className="t" style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, marginBottom: 8, fontSize: 14 }}><span>{infoCat(g.n).e} {g.n}</span><span>{brl0(g.total)}</span></div>
+                  {g.subs.map(([nome, v]) => (
+                    <div className="gc-row" key={nome} style={{ marginBottom: 7 }}>
+                      <div className="t"><span>{nome}</span><span>{brl0(v)}</span></div>
+                      <div className="gc-bar"><i style={{ width: `${v / g.total * 100}%`, background: infoCat(g.n).c }} /></div>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+      </Card>
 
       <Card className="c4">
         <h3>Por membro <button className="link" onClick={() => ir('membros')}>Ver</button></h3>

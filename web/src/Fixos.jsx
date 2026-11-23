@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Card, Ico, Vazio } from './ui.jsx';
 import { CATS, DESPESAS, catInfo, brl, soma } from './util.js';
 
-const novo = tipo => ({ tipo, valor: '', descricao: '', categoria: tipo === 'receita' ? 'Renda' : 'Moradia', subcategoria: '', membro: 'Família', dia: String(new Date().getDate()), avisar: true, variavel: false, ativo: true });
+const novo = tipo => ({ tipo, valor: '', descricao: '', categoria: tipo === 'receita' ? 'Renda' : 'Moradia', subcategoria: '', membro: 'Família', dia: String(new Date().getDate()), avisar: true, variavel: false, fatura: false, ativo: true });
 
 function Linha({ f, info, editar, excluir }) {
   const c = info(f.categoria);
@@ -10,7 +10,7 @@ function Linha({ f, info, editar, excluir }) {
     <div className="li" style={f.ativo ? undefined : { opacity: .55 }}>
       <div className="dot" aria-hidden="true">{c.e}</div>
       <div style={{ minWidth: 0 }}>
-        <div className="n">{f.descricao}{!f.ativo && <span className="wa">Pausada</span>}{f.ativo && f.avisar && <span className="wa">Avisa no WhatsApp</span>}{f.variavel && <span className="wa">Valor varia</span>}</div>
+        <div className="n">{f.descricao}{!f.ativo && <span className="wa">Pausada</span>}{f.ativo && f.avisar && <span className="wa">Avisa no WhatsApp</span>}{f.fatura && <span className="wa cc">Fatura do cartão</span>}{f.variavel && !f.fatura && <span className="wa">Valor varia</span>}</div>
         <div className="m">Todo dia {f.dia} · {f.categoria}{f.subcategoria ? ` › ${f.subcategoria}` : ''} · {f.membro}</div>
       </div>
       <div className={`v ${f.tipo === 'receita' ? 'inc' : 'exp'}`}>{f.tipo === 'receita' ? '+' : '−'} {brl(f.valor)}</div>
@@ -37,7 +37,7 @@ function Gaveta({ inicial, cats, nomesMembros, fechar, salvar }) {
     if (!(valor > 0)) return setErro('Informe um valor maior que zero.');
     if (!(dia >= 1 && dia <= 31)) return setErro('O dia precisa estar entre 1 e 31.');
     setErro('');
-    if (await salvar({ tipo: f.tipo, valor, descricao: f.descricao.trim(), categoria: f.categoria, subcategoria: f.subcategoria, membro: f.membro, dia, avisar: f.tipo === 'despesa' && f.avisar, variavel: f.tipo === 'despesa' && f.variavel, ativo: f.ativo }, inicial.id)) fechar();
+    if (await salvar({ tipo: f.tipo, valor, descricao: f.descricao.trim(), categoria: f.categoria, subcategoria: f.subcategoria, membro: f.membro, dia, avisar: f.tipo === 'despesa' && f.avisar, variavel: f.tipo === 'despesa' && f.variavel, fatura: f.tipo === 'despesa' && !!f.fatura, ativo: f.ativo }, inicial.id)) fechar();
   };
   const titulo = editando ? 'Editar conta fixa' : 'Nova conta fixa';
   return (
@@ -57,7 +57,9 @@ function Gaveta({ inicial, cats, nomesMembros, fechar, salvar }) {
         {subs.length > 0 && <label className="f">Tipo<select className="field" value={f.subcategoria} onChange={set('subcategoria')}><option value="">Escolher...</option>{subs.map(s => <option key={s}>{s}</option>)}</select></label>}
         <label className="f">Membro<select className="field" value={f.membro} onChange={set('membro')}>{[...new Set(['Família', ...nomesMembros, f.membro])].map(n => <option key={n}>{n}</option>)}</select></label>
         {f.tipo === 'despesa' && <label className="check"><input type="checkbox" checked={f.avisar} onChange={e => setF({ ...f, avisar: e.target.checked })} /> Avisar no WhatsApp no dia do vencimento</label>}
-        {f.tipo === 'despesa' && <label className="check"><input type="checkbox" checked={!!f.variavel} onChange={e => setF({ ...f, variavel: e.target.checked })} /> O valor muda todo mês (confirmo no dia do vencimento)</label>}
+        {f.tipo === 'despesa' && <label className="check"><input type="checkbox" checked={!!f.fatura} onChange={e => setF({ ...f, fatura: e.target.checked, variavel: e.target.checked || f.variavel, categoria: e.target.checked ? 'Fatura do cartão' : cats[0]?.n || 'Moradia', subcategoria: '' })} /> É a fatura do cartão de crédito</label>}
+        {f.fatura && <div className="sub" style={{ marginBottom: 10 }}>A fatura avisa e registra o valor pago, mas não entra no total de gastos: as compras do cartão já foram contadas quando você as lançou.</div>}
+        {f.tipo === 'despesa' && <label className="check"><input type="checkbox" checked={!!f.variavel} disabled={!!f.fatura} onChange={e => setF({ ...f, variavel: e.target.checked })} /> O valor muda todo mês (confirmo no dia do vencimento)</label>}
         <label className="check"><input type="checkbox" checked={f.ativo} onChange={e => setF({ ...f, ativo: e.target.checked })} /> Ativa (gera o lançamento todo mês)</label>
         <div className="btns"><button className="btn p" type="submit">Salvar conta fixa</button><button className="btn" type="button" onClick={fechar}>Cancelar</button></div>
       </form>

@@ -97,7 +97,8 @@ export default function App() {
 
   if (!logado) return <Login erro={erroLogin} aoEntrar={c => { salvarChave(c); setErroLogin(''); setLogado(true); }} />;
 
-  const comum = { transacoes: transacoes || [], config, mes, nomesMembros };
+  // pagar a fatura do cartão não é gasto novo (as compras já entraram): fica fora dos totais, mas aparece na lista de Transações
+  const comum = { transacoes: (transacoes || []).filter(t => !t.fatura), config, mes, nomesMembros };
   return (
     <div className="shell">
       <div className="app">
@@ -127,7 +128,7 @@ export default function App() {
           </header>
           {transacoes === null ? <div className="skel" /> : <>
             {view === 'geral' && <Overview {...comum} ir={setView} />}
-            {view === 'transacoes' && <Transacoes {...comum} editar={setGaveta} excluir={excluir} nova={() => setGaveta({})} />}
+            {view === 'transacoes' && <Transacoes {...comum} transacoes={transacoes} editar={setGaveta} excluir={excluir} nova={() => setGaveta({})} />}
             {view === 'metas' && <Metas {...comum} salvarConfig={salvarConfig} />}
             {view === 'fixos' && <Fixos {...comum} fixos={fixos} salvar={salvarFixo} excluir={excluirFixo} />}
             {view === 'membros' && <Membros {...comum} salvarConfig={salvarConfig} />}

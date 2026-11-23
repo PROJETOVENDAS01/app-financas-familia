@@ -11,13 +11,15 @@ function limparFixo(b) {
   const valor = Number(b.valor), dia = Math.trunc(Number(b.dia));
   const descricao = String(b.descricao || '').trim().slice(0, 100);
   if (!['despesa', 'receita'].includes(b.tipo) || !(valor > 0) || !(dia >= 1 && dia <= 31) || !descricao) return null;
+  const fatura = b.tipo === 'despesa' && !!b.fatura; // pagamento da fatura do cartão: avisa e registra, mas não conta como gasto novo
   return {
     tipo: b.tipo, valor, dia, descricao,
-    categoria: String(b.categoria || (b.tipo === 'receita' ? 'Renda' : 'Outros')).slice(0, 50),
-    subcategoria: String(b.subcategoria || '').slice(0, 50),
+    categoria: fatura ? 'Fatura do cartão' : String(b.categoria || (b.tipo === 'receita' ? 'Renda' : 'Outros')).slice(0, 50),
+    subcategoria: fatura ? '' : String(b.subcategoria || '').slice(0, 50),
     membro: String(b.membro || 'Família').slice(0, 50),
     avisar: b.tipo === 'despesa' && b.avisar !== false,
-    variavel: b.tipo === 'despesa' && !!b.variavel, // valor muda todo mês: o valor da conta é só uma estimativa, confirmada no dia
+    variavel: fatura || (b.tipo === 'despesa' && !!b.variavel), // valor muda todo mês: o valor da conta é só uma estimativa, confirmada no dia
+    fatura,
     ativo: b.ativo !== false
   };
 }
@@ -29,7 +31,7 @@ function gerarFixosDoMes(obj, mes) {
   for (const f of obj.fixos || []) {
     f.meses = f.meses || [];
     if (!f.ativo || f.meses.includes(mes)) continue;
-    obj.transacoes.push({ id: id++, tipo: f.tipo, data: dataDoMes(mes, f.dia), valor: f.valor, categoria: f.categoria, subcategoria: f.subcategoria, descricao: f.descricao, membro: f.membro, cartao: false, origem: 'fixo', fixoId: f.id, ...(f.variavel ? { variavel: true, confirmado: false } : {}) });
+    obj.transacoes.push({ id: id++, tipo: f.tipo, data: dataDoMes(mes, f.dia), valor: f.valor, categoria: f.categoria, subcategoria: f.subcategoria, descricao: f.descricao, membro: f.membro, cartao: false, origem: 'fixo', fixoId: f.id, ...(f.variavel ? { variavel: true, confirmado: false } : {}), ...(f.fatura ? { fatura: true } : {}) });
     f.meses = [...f.meses, mes].slice(-24);
     mudou = true;
   }
@@ -43,6 +45,7 @@ function aplicarEdicao(obj, f, mesAtual) {
     const jaConfirmado = t.variavel && t.confirmado; // valor real já confirmado: a edição da estimativa não mexe nele
     Object.assign(t, { tipo: f.tipo, categoria: f.categoria, subcategoria: f.subcategoria, descricao: f.descricao, membro: f.membro, data: dataDoMes(t.data.slice(0, 7), f.dia) });
     if (!jaConfirmado) t.valor = f.valor;
+    if (f.fatura) t.fatura = true; else delete t.fatura;
     if (f.variavel) t.variavel = true; else { delete t.variavel; delete t.confirmado; delete t.aguardandoValor; }
   }
 }

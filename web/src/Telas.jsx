@@ -13,7 +13,7 @@ export function Transacoes({ transacoes, mes, nomesMembros, editar, excluir, nov
     .filter(t => !tipo || t.tipo === tipo)
     .filter(t => !q || `${t.descricao} ${t.categoria} ${t.membro}`.toLowerCase().includes(q.toLowerCase()))
     .sort((a, b) => b.data.localeCompare(a.data) || b.id - a.id), [transacoes, mes, q, cat, mem, tipo]);
-  const rec = soma(lista.filter(t => t.tipo === 'receita')), desp = soma(lista.filter(t => t.tipo === 'despesa'));
+  const rec = soma(lista.filter(t => t.tipo === 'receita')), desp = soma(lista.filter(t => t.tipo === 'despesa' && !t.fatura));
   const filtrando = q || cat || mem || tipo;
   return (
     <Card tilt={false}>
@@ -235,7 +235,7 @@ export function Assistente({ mes }) {
 export function Gaveta({ tx, mes, nomesMembros, fechar, salvar }) {
   const editando = !!tx?.id;
   const catObj = CATS.find(c => c.n === (tx?.categoria || 'Alimentação'));
-  const [f, setF] = useState(() => ({ tipo: 'despesa', valor: '', descricao: '', categoria: 'Alimentação', subcategoria: '', membro: nomesMembros.find(n => n !== 'Família') || 'Família', data: `${mes}-${String(Math.min(new Date().getDate(), 28)).padStart(2, '0')}`, repetir: false, ...tx }));
+  const [f, setF] = useState(() => ({ tipo: 'despesa', valor: '', descricao: '', categoria: 'Alimentação', subcategoria: '', membro: nomesMembros.find(n => n !== 'Família') || 'Família', data: `${mes}-${String(Math.min(new Date().getDate(), 28)).padStart(2, '0')}`, repetir: false, cartao: false, parcelas: '1', ...tx }));
   const [erro, setErro] = useState('');
   const set = k => e => setF({ ...f, [k]: e.target.value });
   const catAtual = CATS.find(c => c.n === f.categoria);
@@ -244,7 +244,7 @@ export function Gaveta({ tx, mes, nomesMembros, fechar, salvar }) {
     const valor = Number(String(f.valor).replace(',', '.'));
     if (!(valor > 0)) return setErro('Informe um valor maior que zero.');
     setErro('');
-    await salvar({ tipo: f.tipo, valor, descricao: f.descricao.trim(), categoria: f.categoria, subcategoria: f.subcategoria, membro: f.membro, data: f.data }, tx?.id, f.repetir);
+    await salvar({ tipo: f.tipo, valor, descricao: f.descricao.trim(), categoria: f.categoria, subcategoria: f.subcategoria, membro: f.membro, data: f.data, cartao: f.tipo === 'despesa' && !!f.cartao, parcelas: !editando && f.tipo === 'despesa' && f.cartao ? Number(f.parcelas) || 1 : undefined }, tx?.id, f.repetir);
   };
   return (
     <>
@@ -261,6 +261,8 @@ export function Gaveta({ tx, mes, nomesMembros, fechar, salvar }) {
         <label className="f">Categoria<select className="field" value={f.categoria} onChange={e => setF({ ...f, categoria: e.target.value, subcategoria: '' })}>{CATS.map(c => <option key={c.n}>{c.n}</option>)}</select></label>
         {catAtual?.sub && catAtual.sub.length > 0 && <label className="f">Tipo<select className="field" value={f.subcategoria} onChange={set('subcategoria')}><option value="">Escolher...</option>{catAtual.sub.map(s => <option key={s}>{s}</option>)}</select></label>}
         <label className="f">Membro<select className="field" value={f.membro} onChange={set('membro')}>{[...new Set(['Família', ...nomesMembros, f.membro])].map(n => <option key={n}>{n}</option>)}</select></label>
+        {f.tipo === 'despesa' && <label className="check"><input type="checkbox" checked={!!f.cartao} onChange={e => setF({ ...f, cartao: e.target.checked })} /> Pago no cartão de crédito</label>}
+        {f.tipo === 'despesa' && f.cartao && !editando && <label className="f">Parcelas<input className="field" type="number" min="1" max="48" value={f.parcelas} onChange={set('parcelas')} /><span className="sub">O valor acima é o total da compra. Cada mês entra uma parcela.</span></label>}
         <label className="f">Data<input className="field" type="date" value={f.data} onChange={set('data')} required /></label>
         {!editando && <label className="check"><input type="checkbox" checked={f.repetir} onChange={e => setF({ ...f, repetir: e.target.checked })} /> Repetir todo mês pelos próximos 11 meses</label>}
         <div className="btns"><button className="btn p" type="submit">Salvar transação</button><button className="btn" type="button" onClick={fechar}>Cancelar</button></div>
