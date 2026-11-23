@@ -7,7 +7,8 @@ export const sairDaConta = () => { try { localStorage.removeItem(K); } catch { /
 
 export class NaoAutorizado extends Error {}
 
-// repetir: tenta de novo uma vez se o proxy devolver 502 (conexão reaproveitada que o servidor já tinha fechado). Só para chamadas que podem repetir sem efeito duplicado.
+// repetir: se o proxy devolver 502/503/504 (servidor reiniciando num deploy, conexão que caiu), espera e tenta de novo até 3 vezes. Só para chamadas que podem repetir sem efeito duplicado.
+const FORA_DO_AR = [502, 503, 504];
 async function req(metodo, caminho, corpo, repetir = metodo === 'GET') {
   const enviar = () => fetch(caminho, {
     method: metodo,
@@ -15,10 +16,10 @@ async function req(metodo, caminho, corpo, repetir = metodo === 'GET') {
     body: corpo ? JSON.stringify(corpo) : undefined
   });
   let r = await enviar();
-  if (r.status === 502 && repetir) r = await enviar();
+  for (let i = 1; i <= 3 && repetir && FORA_DO_AR.includes(r.status); i++) { await new Promise(ok => setTimeout(ok, 2000 * i)); r = await enviar(); }
   if (r.status === 401) throw new NaoAutorizado();
   const dados = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(dados.erro || 'Erro ' + r.status);
+  if (!r.ok) throw new Error(dados.erro || (FORA_DO_AR.includes(r.status) ? 'O servidor está reiniciando ou fora do ar. Espere uns segundos e tente de novo.' : 'Erro ' + r.status));
   return dados;
 }
 
