@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { Card, Ico, Vazio } from './ui.jsx';
-import { CATS, DESPESAS, catInfo, brl, soma } from './util.js';
+import { CATS, DESPESAS, catInfo, brl, soma, mesAtual, mesLabel } from './util.js';
 import { api } from './api.js';
 
 const SIMB = { BRL: 'R$', USD: 'US$', EUR: '€', GBP: '£' };
 const num2 = n => Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const novo = tipo => ({ tipo, valor: '', descricao: '', categoria: tipo === 'receita' ? 'Renda' : 'Moradia', subcategoria: '', membro: 'Família', dia: String(new Date().getDate()), avisar: true, variavel: false, fatura: false, moeda: 'BRL', ativo: true });
+const novo = tipo => ({ tipo, valor: '', descricao: '', categoria: tipo === 'receita' ? 'Renda' : 'Moradia', subcategoria: '', membro: 'Família', dia: String(new Date().getDate()), avisar: true, variavel: false, fatura: false, fechamento: '', cartao: false, moeda: 'BRL', ativo: true });
 
 function Linha({ f, info, aprox, editar, excluir }) {
   const c = info(f.categoria);
@@ -13,7 +13,7 @@ function Linha({ f, info, aprox, editar, excluir }) {
     <div className="li" style={f.ativo ? undefined : { opacity: .55 }}>
       <div className="dot" aria-hidden="true">{c.e}</div>
       <div style={{ minWidth: 0 }}>
-        <div className="n">{f.descricao}{!f.ativo && <span className="wa">Pausada</span>}{f.ativo && f.avisar && <span className="wa">Avisa no WhatsApp</span>}{f.fatura && <span className="wa cc">Fatura do cartão</span>}{f.variavel && !f.fatura && <span className="wa">Valor varia</span>}</div>
+        <div className="n">{f.descricao}{!f.ativo && <span className="wa">Pausada</span>}{f.ativo && f.avisar && <span className="wa">Avisa no WhatsApp</span>}{f.fatura && <span className="wa cc">Fatura do cartão</span>}{f.cartao && <span className="wa cc">Cartão</span>}{f.variavel && !f.fatura && <span className="wa">Valor varia</span>}</div>
         <div className="m">Todo dia {f.dia} · {f.categoria}{f.subcategoria ? ` › ${f.subcategoria}` : ''} · {f.membro}</div>
       </div>
       <div className={`v ${f.tipo === 'receita' ? 'inc' : 'exp'}`}>{f.tipo === 'receita' ? '+' : '−'} {f.moeda ? `${SIMB[f.moeda]} ${num2(f.valor)}` : brl(f.valor)}{f.moeda && aprox != null && <small style={{ display: 'block', fontWeight: 600, opacity: .7 }}>≈ {brl(aprox)}</small>}</div>
@@ -41,7 +41,7 @@ function Gaveta({ inicial, cats, nomesMembros, fechar, salvar }) {
     if (!(valor > 0)) return setErro('Informe um valor maior que zero.');
     if (!(dia >= 1 && dia <= 31)) return setErro('O dia precisa estar entre 1 e 31.');
     setErro('');
-    if (await salvar({ tipo: f.tipo, valor, descricao: f.descricao.trim(), categoria: f.categoria, subcategoria: f.subcategoria, membro: f.membro, dia, avisar: f.tipo === 'despesa' && f.avisar, variavel: f.tipo === 'despesa' && f.variavel, moeda: f.moeda !== 'BRL' && !f.fatura ? f.moeda : null, fatura: f.tipo === 'despesa' && !!f.fatura, ativo: f.ativo }, inicial.id)) fechar();
+    if (await salvar({ tipo: f.tipo, valor, descricao: f.descricao.trim(), categoria: f.categoria, subcategoria: f.subcategoria, membro: f.membro, dia, avisar: f.tipo === 'despesa' && f.avisar, variavel: f.tipo === 'despesa' && f.variavel, moeda: f.moeda !== 'BRL' && !f.fatura ? f.moeda : null, fatura: f.tipo === 'despesa' && !!f.fatura, fechamento: f.fatura && f.fechamento ? Number(f.fechamento) : null, cartao: f.tipo === 'despesa' && !f.fatura && !!f.cartao, ativo: f.ativo }, inicial.id)) fechar();
   };
   const titulo = editando ? 'Editar conta fixa' : 'Nova conta fixa';
   return (
@@ -68,7 +68,11 @@ function Gaveta({ inicial, cats, nomesMembros, fechar, salvar }) {
         <label className="f">Membro<select className="field" value={f.membro} onChange={set('membro')}>{[...new Set(['Família', ...nomesMembros, f.membro])].map(n => <option key={n}>{n}</option>)}</select></label>
         {f.tipo === 'despesa' && <label className="check"><input type="checkbox" checked={f.avisar} onChange={e => setF({ ...f, avisar: e.target.checked })} /> Avisar no WhatsApp no dia do vencimento</label>}
         {f.tipo === 'despesa' && <label className="check"><input type="checkbox" checked={!!f.fatura} onChange={e => setF({ ...f, fatura: e.target.checked, moeda: e.target.checked ? 'BRL' : f.moeda, variavel: e.target.checked || f.variavel, categoria: e.target.checked ? 'Fatura do cartão' : cats[0]?.n || 'Moradia', subcategoria: '' })} /> É a fatura do cartão de crédito</label>}
-        {f.fatura && <div className="sub" style={{ marginBottom: 10 }}>A fatura avisa e registra o valor pago, mas não entra no total de gastos: as compras do cartão já foram contadas quando você as lançou.</div>}
+        {f.fatura && <>
+          <div className="sub" style={{ marginBottom: 10 }}>A fatura avisa e registra o valor pago, mas não entra no total de gastos: as compras do cartão já foram contadas quando você as lançou. No dia, o bot compara o valor pago com as compras registradas no ciclo e oferece lançar a diferença.</div>
+          <label className="f">Dia do fechamento da fatura (opcional)<input className="field" type="number" min="1" max="31" value={f.fechamento} onChange={set('fechamento')} placeholder="Sem informar, usamos 7 dias antes do vencimento" /></label>
+        </>}
+        {f.tipo === 'despesa' && !f.fatura && <label className="check"><input type="checkbox" checked={!!f.cartao} onChange={e => setF({ ...f, cartao: e.target.checked })} /> Paga no cartão de crédito (entra nos gastos do cartão)</label>}
         {f.tipo === 'despesa' && <label className="check"><input type="checkbox" checked={!!f.variavel || estrangeira} disabled={!!f.fatura || estrangeira} onChange={e => setF({ ...f, variavel: e.target.checked })} /> O valor muda todo mês (confirmo no dia do vencimento)</label>}
         <label className="check"><input type="checkbox" checked={f.ativo} onChange={e => setF({ ...f, ativo: e.target.checked })} /> Ativa (gera o lançamento todo mês)</label>
         <div className="btns"><button className="btn p" type="submit">Salvar conta fixa</button><button className="btn" type="button" onClick={fechar}>Cancelar</button></div>
@@ -77,7 +81,41 @@ function Gaveta({ inicial, cats, nomesMembros, fechar, salvar }) {
   );
 }
 
-export function Fixos({ fixos, config, nomesMembros, salvar, excluir }) {
+// Compras parceladas no cartão (criadas pelo WhatsApp ou pelo formulário): cada parcela já é um lançamento mensal; aqui aparecem juntas, pelo período das parcelas
+function Parcelados({ transacoes, mes, info, excluirCompra }) {
+  const hoje = mesAtual(), grupos = {};
+  transacoes.filter(t => t.compraId).forEach(t => (grupos[t.compraId] ||= []).push(t));
+  const compras = Object.values(grupos).map(ps => ps.sort((a, b) => a.data.localeCompare(b.data)))
+    .filter(ps => ps[ps.length - 1].data.slice(0, 7) >= hoje) // só as que ainda têm parcela a pagar
+    .sort((a, b) => a[0].data.localeCompare(b[0].data));
+  const noMes = soma(compras.flat().filter(t => t.data.startsWith(mes)), t => t.valor);
+  return (
+    <Card className="c12" tilt={false}>
+      <h3>Compras parceladas no cartão</h3>
+      {compras.length === 0
+        ? <Vazio titulo="Nenhuma compra parcelada em andamento" texto="Diga “comprei um tênis em 3x” no WhatsApp, ou marque cartão e parcelas ao criar uma transação." />
+        : <>
+          <div className="sub" style={{ marginBottom: 6 }}>Parcelas em {mesLabel(mes)}: <b className="exp">{brl(noMes)}</b></div>
+          {compras.map(ps => {
+            const p = ps[0], atual = Math.max(ps.findIndex(x => x.data.slice(0, 7) >= hoje), 0), faltam = ps.slice(atual);
+            return (
+              <div className="li" key={p.compraId}>
+                <div className="dot" aria-hidden="true">{info(p.categoria).e}</div>
+                <div style={{ minWidth: 0 }}>
+                  <div className="n">{p.descricao || p.categoria}<span className="wa cc">Parcela {atual + 1}/{p.parcelas}</span></div>
+                  <div className="m">{p.categoria}{p.subcategoria ? ` › ${p.subcategoria}` : ''} · {p.membro} · última em {mesLabel(ps[ps.length - 1].data.slice(0, 7))} · faltam {brl(soma(faltam, t => t.valor))}</div>
+                </div>
+                <div className="v exp">− {brl(p.valor)}<small style={{ display: 'block', fontWeight: 600, opacity: .7 }}>por mês</small></div>
+                <div className="acts"><button className="round" aria-label={`Excluir compra ${p.descricao}`} onClick={() => excluirCompra(ps)}><Ico d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" /></button></div>
+              </div>
+            );
+          })}
+        </>}
+    </Card>
+  );
+}
+
+export function Fixos({ fixos, config, nomesMembros, transacoes, mes, salvar, excluir, excluirCompra }) {
   const [gaveta, setGaveta] = useState(null);
   const cats = config.categorias?.length ? config.categorias : DESPESAS;
   const info = n => (config.categorias || []).find(c => c.n === n) || catInfo(n);
@@ -94,7 +132,7 @@ export function Fixos({ fixos, config, nomesMembros, salvar, excluir }) {
   const ordenar = l => [...l].sort((a, b) => a.dia - b.dia);
   const lista = (l, tipo) => l.length === 0
     ? <Vazio titulo={tipo === 'receita' ? 'Nenhuma receita fixa' : 'Nenhuma despesa fixa'} texto={tipo === 'receita' ? 'Cadastre o salário e outras entradas que se repetem todo mês.' : 'Cadastre aluguel, escola, internet e outras contas que se repetem todo mês.'} acao="Adicionar" onAcao={() => setGaveta(novo(tipo))} />
-    : ordenar(l).map(f => <Linha key={f.id} f={f} info={info} aprox={f.moeda && taxas[f.moeda] ? f.valor * taxas[f.moeda] : null} editar={x => setGaveta({ ...x, valor: String(x.valor).replace('.', ','), dia: String(x.dia), moeda: x.moeda || 'BRL' })} excluir={excluir} />);
+    : ordenar(l).map(f => <Linha key={f.id} f={f} info={info} aprox={f.moeda && taxas[f.moeda] ? f.valor * taxas[f.moeda] : null} editar={x => setGaveta({ ...x, valor: String(x.valor).replace('.', ','), dia: String(x.dia), moeda: x.moeda || 'BRL', fechamento: x.fechamento ? String(x.fechamento) : '' })} excluir={excluir} />);
   return (
     <>
     <div className="bento">
@@ -109,6 +147,7 @@ export function Fixos({ fixos, config, nomesMembros, salvar, excluir }) {
       </Card>
       <Card className="c6" tilt={false}><h3>Despesas fixas</h3>{lista(despesas, 'despesa')}</Card>
       <Card className="c6" tilt={false}><h3>Receitas fixas</h3>{lista(receitas, 'receita')}</Card>
+      <Parcelados transacoes={transacoes} mes={mes} info={info} excluirCompra={excluirCompra} />
     </div>
     {/* fora do .bento: o perspective dele prenderia o painel fixo dentro da grade */}
     {gaveta && <Gaveta inicial={gaveta} cats={cats} nomesMembros={nomesMembros} fechar={() => setGaveta(null)} salvar={salvar} />}

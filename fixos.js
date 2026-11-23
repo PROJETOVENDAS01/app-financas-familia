@@ -16,6 +16,7 @@ function limparFixo(b) {
   const descricao = String(b.descricao || '').trim().slice(0, 100);
   if (!['despesa', 'receita'].includes(b.tipo) || !(valor > 0) || !(dia >= 1 && dia <= 31) || !descricao) return null;
   const fatura = b.tipo === 'despesa' && !!b.fatura; // pagamento da fatura do cartão: avisa e registra, mas não conta como gasto novo
+  const fechamento = fatura && Number.isInteger(Number(b.fechamento)) && b.fechamento >= 1 && b.fechamento <= 31 ? Number(b.fechamento) : null; // dia em que a fatura fecha (opcional; sem ele, 7 dias antes do vencimento)
   const moeda = !fatura && MOEDAS.includes(b.moeda) ? b.moeda : null; // conta em dólar/euro/libra: "valor" fica na moeda e o real é calculado pela cotação
   return {
     tipo: b.tipo, valor, dia, descricao,
@@ -25,7 +26,9 @@ function limparFixo(b) {
     avisar: b.tipo === 'despesa' && b.avisar !== false,
     variavel: fatura || (b.tipo === 'despesa' && (!!b.variavel || !!moeda)), // valor muda todo mês: o valor da conta é só uma estimativa, confirmada no dia
     moeda,
+    cartao: b.tipo === 'despesa' && !fatura && !!b.cartao, // conta paga no cartão de crédito: entra nos gastos do cartão
     fatura,
+    fechamento,
     ativo: b.ativo !== false
   };
 }
@@ -40,7 +43,7 @@ function gerarFixosDoMes(obj, mes, taxas = {}) {
     if (!f.ativo || f.meses.includes(mes)) continue;
     const q = f.moeda ? taxas[f.moeda] : null;
     if (f.moeda && !q) continue;
-    obj.transacoes.push({ id: id++, tipo: f.tipo, data: dataDoMes(mes, f.dia), valor: q ? r2(f.valor * q.taxa) : f.valor, ...(q ? { moeda: f.moeda, valorOriginal: f.valor, cotacao: q.taxa } : {}), categoria: f.categoria, subcategoria: f.subcategoria, descricao: f.descricao, membro: f.membro, cartao: false, origem: 'fixo', fixoId: f.id, ...(f.variavel ? { variavel: true, confirmado: false } : {}), ...(f.fatura ? { fatura: true } : {}) });
+    obj.transacoes.push({ id: id++, tipo: f.tipo, data: dataDoMes(mes, f.dia), valor: q ? r2(f.valor * q.taxa) : f.valor, ...(q ? { moeda: f.moeda, valorOriginal: f.valor, cotacao: q.taxa } : {}), categoria: f.categoria, subcategoria: f.subcategoria, descricao: f.descricao, membro: f.membro, cartao: !!f.cartao, origem: 'fixo', fixoId: f.id, ...(f.variavel ? { variavel: true, confirmado: false } : {}), ...(f.fatura ? { fatura: true } : {}) });
     f.meses = [...f.meses, mes].slice(-24);
     mudou = true;
   }
@@ -52,7 +55,7 @@ function aplicarEdicao(obj, f, mesAtual, taxas = {}) {
   for (const t of obj.transacoes) {
     if (t.fixoId !== f.id || t.data.slice(0, 7) < mesAtual) continue;
     const jaConfirmado = t.variavel && t.confirmado; // valor real já confirmado: a edição da estimativa não mexe nele
-    Object.assign(t, { tipo: f.tipo, categoria: f.categoria, subcategoria: f.subcategoria, descricao: f.descricao, membro: f.membro, data: dataDoMes(t.data.slice(0, 7), f.dia) });
+    Object.assign(t, { tipo: f.tipo, categoria: f.categoria, subcategoria: f.subcategoria, descricao: f.descricao, membro: f.membro, cartao: !!f.cartao, data: dataDoMes(t.data.slice(0, 7), f.dia) });
     if (!jaConfirmado) {
       const q = f.moeda ? taxas[f.moeda] : null;
       if (q) Object.assign(t, { valor: r2(f.valor * q.taxa), moeda: f.moeda, valorOriginal: f.valor, cotacao: q.taxa });
@@ -61,6 +64,20 @@ function aplicarEdicao(obj, f, mesAtual, taxas = {}) {
     if (f.fatura) t.fatura = true; else delete t.fatura;
     if (f.variavel) t.variavel = true; else { delete t.variavel; delete t.confirmado; delete t.aguardandoValor; }
   }
+}
+
+const addMes = (ym, n) => { const [y, m] = ym.split('-').map(Number), d = new Date(y, m - 1 + n, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
+const ddmm = iso => `${iso.slice(8)}/${iso.slice(5, 7)}`;
+const diaSeguinte = iso => new Date(new Date(`${iso}T12:00:00Z`).getTime() + 864e5).toISOString().slice(0, 10);
+
+// Ciclo de uma fatura que vence em mesVenc: compras do cartão entre o fechamento anterior (exclusive) e o desta fatura (inclusive).
+// f.dia = vencimento; f.fechamento = dia do fechamento (sem ele: 7 dias antes do vencimento). Parcelas contam na data de cada uma.
+function cicloFatura(f, mesVenc, transacoes) {
+  const fech = f.fechamento || ((f.dia - 8 + 31) % 31) + 1;
+  const mesFech = fech < f.dia ? mesVenc : addMes(mesVenc, -1); // fechamento depois do dia do vencimento = no mês anterior
+  const ate = dataDoMes(mesFech, fech), anterior = dataDoMes(addMes(mesFech, -1), fech);
+  const itens = transacoes.filter(t => t.cartao && t.tipo === 'despesa' && !t.fatura && t.data > anterior && t.data <= ate);
+  return { de: diaSeguinte(anterior), ate, total: r2(itens.reduce((s, t) => s + t.valor, 0)), qtd: itens.length };
 }
 
 // Apagou a conta: remove os lançamentos dela do mês atual em diante (mesmo os que já venceram neste mês);
@@ -93,7 +110,7 @@ module.exports = function criarFixos({ ler, gravar, enviarWhatsApp, membrosWhats
     return [
       '🔔 *Contas para pagar hoje*',
       certas.length && certas.map(linha).join('\n'),
-      mudam.length && `💡 *Confirme o valor:*\n${mudam.map(t => t.moeda && t.valorOriginal ? `• ${t.descricao} — ${SIMBOLO[t.moeda]} ${num2(t.valorOriginal)} ≈ ${brl(t.valor)} (cotação de hoje)` : `• ${t.descricao} — estimado ${brl(t.valor)}`).join('\n')}\n\nResponda o valor real (ex.: "${mudam[0].descricao.toLowerCase()} 187,40") ou *ok* para manter o estimado.`,
+      mudam.length && `💡 *Confirme o valor:*\n${mudam.map(t => t.ciclo ? `• ${t.descricao} — estimado ${brl(t.valor)} · compras registradas no ciclo (${ddmm(t.ciclo.de)} a ${ddmm(t.ciclo.ate)}): ${brl(t.ciclo.total)}` : t.moeda && t.valorOriginal ?`• ${t.descricao} — ${SIMBOLO[t.moeda]} ${num2(t.valorOriginal)} ≈ ${brl(t.valor)} (cotação de hoje)` : `• ${t.descricao} — estimado ${brl(t.valor)}`).join('\n')}\n\nResponda o valor real (ex.: "${mudam[0].descricao.toLowerCase()} 187,40") ou *ok* para manter o estimado.`,
       `💰 Total${mudam.length ? ' (com estimados)' : ''}: ${brl(itens.reduce((s, t) => s + t.valor, 0))}`
     ].filter(Boolean).join('\n\n');
   };
@@ -109,19 +126,41 @@ module.exports = function criarFixos({ ler, gravar, enviarWhatsApp, membrosWhats
   function responderValor(texto) {
     const obj = ler();
     const limite = ha45Dias();
+    const t0 = norm(texto).trim();
+
+    // Diferença entre a fatura paga e as compras registradas: sim lança como gasto do cartão sem detalhe; não descarta
+    const pc = obj.conciliacao;
+    if (pc && Date.now() - new Date(pc.criada).getTime() < 30 * 60000) {
+      if (/^(sim|s|lancar)\b/.test(t0)) {
+        obj.transacoes.push({ id: Date.now(), tipo: 'despesa', data: pc.data, valor: pc.valor, categoria: 'Outros', subcategoria: '', descricao: 'Compras do cartão sem registro', membro: pc.membro, cartao: true, origem: 'conciliacao' });
+        delete obj.conciliacao; gravar(obj);
+        return `✅ Lancei ${brl(pc.valor)} como gasto do cartão sem detalhe (${ddmm(pc.data)}). Assim o mês fica com o gasto real.`;
+      }
+      if (/^(nao|n)\b/.test(t0)) { delete obj.conciliacao; gravar(obj); return 'Ok, não lancei a diferença.'; }
+    }
+
     const aguardando = obj.transacoes.filter(t => t.aguardandoValor && !t.confirmado && t.data >= limite);
     if (!aguardando.length) return null;
-    const t0 = norm(texto).trim();
     const confirmar = (lista, valor) => {
+      const extras = [];
       const linhas = lista.map(t => {
         const antes = t.valor, novo = valor ?? t.valor;
         t.valor = novo; t.confirmado = true; t.aguardandoValor = false;
         const f = (obj.fixos || []).find(x => x.id === t.fixoId);
         if (f?.variavel && !f.moeda) f.valor = novo; // o próximo mês já começa estimando este valor (conta em moeda estrangeira segue estimada pela cotação)
+        if (t.fatura && f) { // concilia: o que foi pago x o que foi registrado no ciclo
+          const c = cicloFatura(f, t.data.slice(0, 7), obj.transacoes), dif = r2(novo - c.total);
+          extras.push(`💳 Compras registradas no ciclo (${ddmm(c.de)} a ${ddmm(c.ate)}): ${brl(c.total)}`);
+          if (dif >= 1) {
+            obj.conciliacao = { valor: dif, data: c.ate, membro: t.membro, criada: new Date().toISOString() };
+            extras.push(`Sobram ${brl(dif)} sem registro (compras antigas, juros...). Quer lançar como gasto do cartão sem detalhe? Responda *sim*.`);
+          } else if (dif <= -1) extras.push(`Você registrou ${brl(-dif)} a mais do que pagou: vale conferir as compras desse ciclo.`);
+          else extras.push('Bate com o que você registrou. ✅');
+        }
         return `✅ ${t.descricao}: ${brl(novo)}${valor != null && antes !== novo ? ` (estava ${brl(antes)})` : ''}`;
       });
       gravar(obj);
-      return `${linhas.join('\n')}\n\nJá está registrado. É só pagar! 💸`;
+      return `${linhas.join('\n')}${extras.length ? `\n\n${extras.join('\n')}` : ''}\n\nJá está registrado. É só pagar! 💸`;
     };
 
     if (/^(ok|okay|mantem|manter|confirmo|confirmado|certo|isso mesmo|pode manter)\b/.test(t0)) return confirmar(aguardando);
@@ -145,6 +184,7 @@ module.exports = function criarFixos({ ler, gravar, enviarWhatsApp, membrosWhats
     const fixos = new Map((obj.fixos || []).map(f => [f.id, f]));
     const pend = obj.transacoes.filter(t => t.fixoId && t.tipo === 'despesa' && t.data === hoje && fixos.get(t.fixoId)?.avisar && !jaAvisados.includes(t.id));
     if (!pend.length) return 0;
+    for (const t of pend) if (t.fatura) t.ciclo = cicloFatura(fixos.get(t.fixoId), t.data.slice(0, 7), obj.transacoes); // soma das compras do cartão, como referência
 
     // conta em moeda estrangeira: refaz a conta com a cotação de hoje antes de avisar
     const taxas = await taxasDe(pend.filter(t => t.moeda && t.variavel && !t.confirmado).map(t => t.moeda));
@@ -196,6 +236,6 @@ module.exports = function criarFixos({ ler, gravar, enviarWhatsApp, membrosWhats
   // Confere a cada minuto (e logo ao subir, para recuperar o dia se o servidor reiniciou)
   const iniciar = () => { setTimeout(ciclo, 5000); setInterval(ciclo, 60000); };
 
-  return { limparFixo, gerarFixosDoMes, aplicarEdicao, removerGerados, limparOrfas, avisarVencimentos, responderValor, taxasDe, mesAtual, hoje: () => agoraSP().slice(0, 10), iniciar };
+  return { limparFixo, gerarFixosDoMes, aplicarEdicao, removerGerados, limparOrfas, cicloFatura, avisarVencimentos, responderValor, taxasDe, mesAtual, hoje: () => agoraSP().slice(0, 10), iniciar };
 };
 module.exports.dataDoMes = dataDoMes;
