@@ -509,6 +509,8 @@ async function baixarMidia(body, data) {
   return { buffer: Buffer.from(b64.replace(/^data:[^,]*,/, ''), 'base64'), mimetype };
 }
 
+const faturaRecente = new Map(); // número -> quando mandou o último arquivo de fatura
+
 // Webhook Evolution API - receber mensagens WhatsApp
 app.post('/webhook/whatsapp', async (req, res) => {
   res.status(200).send('OK');
@@ -563,12 +565,16 @@ app.post('/webhook/whatsapp', async (req, res) => {
   if (data.message.imageMessage || docMsg) {
     const media = data.message.imageMessage || docMsg;
     console.log(`🖼️ ${data.message.imageMessage ? 'Imagem' : 'Documento'} recebido de ${numeroRemetente}`);
+    const legendaFatura = /fatura/.test((media.caption || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase());
+    const modoFatura = legendaFatura || Date.now() - (faturaRecente.get(numeroRemetente) || 0) < 5 * 60000;
+    if (modoFatura) faturaRecente.set(numeroRemetente, Date.now()); // síncrono: as imagens seguintes do mesmo envio já pegam o modo
 
     try {
       const { buffer } = await baixarMidia(req.body, data);
 
-      // "fatura" na legenda: lê todas as compras do cartão em vez de um lançamento só
-      if (/fatura/.test((media.caption || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase())) {
+      // "fatura" na legenda: lê todas as compras do cartão em vez de um lançamento só.
+      // Vários prints enviados juntos: a legenda vai só no primeiro, então as imagens dos 5 minutos seguintes também são páginas da fatura.
+      if (modoFatura) {
         const mime = tipoDoArquivo(buffer);
         if (!mime) { await enviarWhatsApp(numeroRemetente, '😕 Esse arquivo não é um PDF nem uma imagem. Mande a fatura em PDF ou prints das páginas.'); return; }
         if (mime === 'application/pdf' && buffer.toString('latin1').includes('/Encrypt')) {
