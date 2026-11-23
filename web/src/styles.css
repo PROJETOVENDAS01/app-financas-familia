@@ -142,3 +142,13 @@ label.f{display:block;font-size:13px;font-weight:600;color:var(--sub);margin-bot
   .mcard .val{font-size:22px}
 }
 @media(max-width:360px){.nav{font-size:9px}.big{font-size:32px}}
+/* Paguei nas contas fixas, status nas listas e projeção dos próximos meses */
+.pg{white-space:nowrap;margin-top:6px;font-size:12px;font-weight:700;padding:5px 12px;border-radius:99px;border:1px solid var(--rule);background:var(--card);color:var(--sub)}
+.pg:hover{border-color:var(--brand);color:var(--ink)}
+.pg.on{background:var(--okbg);color:var(--ok);border-color:transparent}
+.pg.late{background:var(--warnbg);color:var(--warn);border-color:transparent}
+.wa.pend{background:color-mix(in srgb,#f59e0b 20%,transparent);color:#b45309}:root[data-theme=dark] .wa.pend{color:#fbbf24}
+.prj{padding:10px 0;border-bottom:1px solid var(--rule)}.prj:last-of-type{border:0}
+.prj-hd{display:flex;justify-content:space-between;gap:10px;font-size:14px}
+.prj .bar{height:6px;margin:6px 0}
+.prj .m{font-size:12px;color:var(--sub)}.prj-det{opacity:.85}

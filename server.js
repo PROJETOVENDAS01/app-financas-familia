@@ -276,6 +276,14 @@ app.post('/api/assistente', async (req, res) => {
   }
 });
 
+// "Paguei": marca (ou desfaz) a despesa de uma conta fixa como paga
+app.post('/api/transacoes/:id/pago', (req, res) => {
+  const obj = ler();
+  if (!fixos.definirPago(obj, req.params.id, req.body.pago !== false)) return res.status(400).json({ erro: 'só despesas de contas fixas podem ser marcadas como pagas' });
+  gravar(obj);
+  res.json({ success: true });
+});
+
 app.delete('/api/transacoes/:id', (req, res) => {
   const obj = ler();
   obj.transacoes = obj.transacoes.filter(x => x.id !== Number(req.params.id));
@@ -545,6 +553,10 @@ app.post('/webhook/whatsapp', async (req, res) => {
       return;
     }
   }
+
+  // "Paguei a luz" marca a conta fixa como paga; "pendentes" lista o que falta (antes da resposta de valor, que também reconheceria "luz 187")
+  const respostaPagamento = fixos.responderPagamento(text);
+  if (respostaPagamento) { await enviarWhatsApp(numeroRemetente, respostaPagamento); return; }
 
   // Resposta a um aviso de conta variável ("luz 187,40", "187,40" ou "ok"): grava o valor real
   const respostaValor = fixos.responderValor(text);

@@ -48,7 +48,7 @@ export function Lancamento({ t, onEditar, onExcluir }) {
     <div className="li">
       <div className="dot" aria-hidden="true">{c.e}</div>
       <div style={{ minWidth: 0 }}>
-        <div className="n">{t.descricao || t.categoria}{doZap && <span className="wa">WhatsApp</span>}{t.origem === 'fixo' && <span className="wa">Fixa</span>}{t.variavel && !t.confirmado && <span className="wa">Valor estimado</span>}{t.cartao && <span className="wa cc">Cartão</span>}{t.parcelas > 1 && <span className="wa cc">{t.parcela}/{t.parcelas}</span>}{t.fatura && <span className="wa cc">Fatura</span>}{t.moeda && !t.parcelas && <span className="wa cc">{t.moeda} {Number(t.valorOriginal).toLocaleString('pt-BR')}</span>}</div>
+        <div className="n">{t.descricao || t.categoria}{doZap && <span className="wa">WhatsApp</span>}{t.origem === 'fixo' && <span className="wa">Fixa</span>}{t.fixoId && t.tipo === 'despesa' && (t.pago ? <span className="wa">Paga ✓</span> : <span className="wa pend">A pagar</span>)}{t.variavel && !t.confirmado && <span className="wa">Valor estimado</span>}{t.cartao && <span className="wa cc">Cartão</span>}{t.parcelas > 1 && <span className="wa cc">{t.parcela}/{t.parcelas}</span>}{t.fatura && <span className="wa cc">Fatura</span>}{t.moeda && !t.parcelas && <span className="wa cc">{t.moeda} {Number(t.valorOriginal).toLocaleString('pt-BR')}</span>}</div>
         <div className="m">{t.categoria} · {t.membro}</div>
       </div>
       <div className={`v ${t.tipo === 'receita' ? 'inc' : 'exp'}`}>{t.tipo === 'receita' ? '+' : '−'} {brl(t.valor)}</div>

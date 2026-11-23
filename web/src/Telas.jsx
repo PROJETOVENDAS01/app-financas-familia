@@ -4,22 +4,32 @@ import { CATS, DESPESAS, catInfo, brl, brl0, soma, corMembro, addMes } from './u
 import { api } from './api.js';
 
 /* ---------- Transações ---------- */
+const FILTROS = [
+  ['cartao', 'No cartão', t => t.cartao],
+  ['fixas', 'Contas fixas', t => t.origem === 'fixo'],
+  ['apagar', 'A pagar (fixas)', t => t.fixoId && t.tipo === 'despesa' && !t.pago],
+  ['pagas', 'Pagas (fixas)', t => t.fixoId && t.tipo === 'despesa' && t.pago],
+  ['parcelas', 'Parceladas', t => t.parcelas > 1]
+];
+
 export function Transacoes({ transacoes, mes, nomesMembros, editar, excluir, nova }) {
-  const [q, setQ] = useState(''), [cat, setCat] = useState(''), [mem, setMem] = useState(''), [tipo, setTipo] = useState('');
+  const [q, setQ] = useState(''), [cat, setCat] = useState(''), [mem, setMem] = useState(''), [tipo, setTipo] = useState(''), [especial, setEspecial] = useState('');
   const lista = useMemo(() => transacoes
     .filter(t => t.data.startsWith(mes))
+    .filter(t => !especial || FILTROS.find(f => f[0] === especial)[2](t))
     .filter(t => !cat || t.categoria === cat)
     .filter(t => !mem || t.membro === mem)
     .filter(t => !tipo || t.tipo === tipo)
     .filter(t => !q || `${t.descricao} ${t.categoria} ${t.membro}`.toLowerCase().includes(q.toLowerCase()))
-    .sort((a, b) => b.data.localeCompare(a.data) || b.id - a.id), [transacoes, mes, q, cat, mem, tipo]);
+    .sort((a, b) => b.data.localeCompare(a.data) || b.id - a.id), [transacoes, mes, q, cat, mem, tipo, especial]);
   const rec = soma(lista.filter(t => t.tipo === 'receita')), desp = soma(lista.filter(t => t.tipo === 'despesa' && !t.fatura));
-  const filtrando = q || cat || mem || tipo;
+  const filtrando = q || cat || mem || tipo || especial;
   return (
     <Card tilt={false}>
       <div className="toolbar">
         <input className="field grow" placeholder="Buscar lançamento" value={q} onChange={e => setQ(e.target.value)} aria-label="Buscar" />
         <select className="field" value={tipo} onChange={e => setTipo(e.target.value)} aria-label="Tipo"><option value="">Todos os tipos</option><option value="despesa">Despesas</option><option value="receita">Receitas</option></select>
+        <select className="field" value={especial} onChange={e => setEspecial(e.target.value)} aria-label="Filtrar por"><option value="">Todos os lançamentos</option>{FILTROS.map(([k, nome]) => <option key={k} value={k}>{nome}</option>)}</select>
         <select className="field" value={cat} onChange={e => setCat(e.target.value)} aria-label="Categoria"><option value="">Todas as categorias</option>{CATS.map(c => <option key={c.n}>{c.n}</option>)}</select>
         <select className="field" value={mem} onChange={e => setMem(e.target.value)} aria-label="Membro"><option value="">Todos os membros</option>{nomesMembros.map(n => <option key={n}>{n}</option>)}</select>
         <button className="btn p hd-nova" onClick={nova}>Nova transação</button>

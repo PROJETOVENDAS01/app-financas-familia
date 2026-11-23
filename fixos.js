@@ -122,6 +122,70 @@ module.exports = function criarFixos({ ler, gravar, enviarWhatsApp, membrosWhats
     return m ? Number(`${m[1].replace(/\./g, '')}.${m[2] || '0'}`) : null;
   };
 
+  // Grava o valor real nas contas (lista) dentro de obj; quem chama grava o arquivo. Devolve as linhas de resposta e as observações da fatura.
+  function confirmarValor(obj, lista, valor) {
+    const extras = [];
+    const linhas = lista.map(t => {
+      const antes = t.valor, novo = valor ?? t.valor;
+      t.valor = novo; t.confirmado = true; t.aguardandoValor = false;
+      const f = (obj.fixos || []).find(x => x.id === t.fixoId);
+      if (f?.variavel && !f.moeda) f.valor = novo; // o próximo mês já começa estimando este valor (conta em moeda estrangeira segue estimada pela cotação)
+      if (t.fatura && f) { // concilia: o que foi pago x o que foi registrado no ciclo
+        const c = cicloFatura(f, t.data.slice(0, 7), obj.transacoes), dif = r2(novo - c.total);
+        extras.push(`💳 Compras registradas no ciclo (${ddmm(c.de)} a ${ddmm(c.ate)}): ${brl(c.total)}`);
+        if (dif >= 1) {
+          obj.conciliacao = { valor: dif, data: c.ate, membro: t.membro, criada: new Date().toISOString() };
+          extras.push(`Sobram ${brl(dif)} sem registro (compras antigas, juros...). Quer lançar como gasto do cartão sem detalhe? Responda *sim*.`);
+        } else if (dif <= -1) extras.push(`Você registrou ${brl(-dif)} a mais do que pagou: vale conferir as compras desse ciclo.`);
+        else extras.push('Bate com o que você registrou. ✅');
+      }
+      return `✅ ${t.descricao}: ${brl(novo)}${valor != null && antes !== novo ? ` (estava ${brl(antes)})` : ''}`;
+    });
+    return { linhas, extras };
+  }
+
+  // "Paguei" nas contas fixas: marca a despesa do mês como paga (ou desfaz). Só despesa que veio de conta fixa.
+  function definirPago(obj, id, pago) {
+    const t = obj.transacoes.find(x => x.id === Number(id));
+    if (!t || !t.fixoId || t.tipo !== 'despesa') return false;
+    if (pago) { t.pago = true; t.pagoEm = agoraSP().slice(0, 10); t.aguardandoValor = false; } else { delete t.pago; delete t.pagoEm; }
+    return true;
+  }
+
+  const PARADAS = new Set(['conta', 'contas', 'para', 'pagamento', 'pelo', 'pela', 'dos', 'das']); // palavras comuns demais para identificar uma conta
+  const escRe = p => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  // Pelo WhatsApp: "paguei a luz" / "paguei o aluguel 1800" marca como paga; "pendentes" lista o que falta.
+  // Devolve o texto a enviar, ou null se a mensagem não é sobre isso (ex.: "paguei 50 no mercado" segue o fluxo normal).
+  function responderPagamento(texto) {
+    const t0 = norm(texto).trim().replace(/[?!.]+$/, '');
+    const pedeLista = /^(pendentes|a pagar|contas pendentes|contas a pagar|o que falta( pagar)?|falta pagar|quais contas faltam)$/.test(t0);
+    const m = t0.match(/^(?:ja |foi )?(?:paguei|pago|pagamos|quitei|quitamos)\s+(.+)$/);
+    if (!pedeLista && !m) return null;
+    const obj = ler(), mes = mesAtual(), desde = `${addMes(mes, -1)}-01`;
+    const contas = obj.transacoes.filter(t => t.fixoId && t.tipo === 'despesa' && t.data >= desde && t.data.slice(0, 7) <= mes);
+    const faltam = () => contas.filter(t => !t.pago).sort((a, b) => a.data.localeCompare(b.data));
+    const resumo = () => { const f = faltam(); return f.length ? `⏳ *Faltam pagar* (${brl(f.reduce((s, t) => s + t.valor, 0))}):\n${f.map(t => `• ${t.descricao} — ${brl(t.valor)} (dia ${ddmm(t.data)})`).join('\n')}` : '🎉 Não falta nenhuma conta fixa.'; };
+    if (pedeLista) return resumo();
+
+    const rest = m[1];
+    const cand = contas.filter(t => norm(t.descricao).split(/\s+/).some(p => p.length >= 3 && !PARADAS.has(p) && new RegExp(`\\b${escRe(p)}\\b`).test(rest)));
+    if (!cand.length) return null;
+    const ids = [...new Set(cand.map(t => t.fixoId))];
+    if (ids.length > 1) { const nomes = ids.map(i => cand.find(t => t.fixoId === i).descricao); return `Qual conta você pagou? ${nomes.join(' ou ')}. Ex.: "paguei ${nomes[0].toLowerCase()}".`; }
+    const t = cand.filter(x => !x.pago).sort((a, b) => a.data.localeCompare(b.data))[0];
+    if (!t) return `${cand[0].descricao} já estava marcada como paga. ✅`;
+    const valor = parseValor(rest);
+    let extras = [];
+    if (valor > 0 && valor !== t.valor) {
+      if (t.variavel && !t.confirmado) extras = confirmarValor(obj, [t], valor).extras;
+      else t.valor = valor; // pagou um valor diferente do cadastrado: o lançamento do mês passa a ter o valor pago
+    } else if (t.variavel && !t.confirmado) confirmarValor(obj, [t]);
+    definirPago(obj, t.id, true);
+    gravar(obj);
+    return `✅ ${t.descricao} marcada como paga: ${brl(t.valor)}.${extras.length ? `\n\n${extras.join('\n')}` : ''}\n\n${resumo()}`;
+  }
+
   // Resposta ao pedido de confirmação de valor ("luz 187,40", "187,40" ou "ok"). Devolve o texto a enviar, ou null se a mensagem não é sobre isso.
   function responderValor(texto) {
     const obj = ler();
@@ -142,23 +206,7 @@ module.exports = function criarFixos({ ler, gravar, enviarWhatsApp, membrosWhats
     const aguardando = obj.transacoes.filter(t => t.aguardandoValor && !t.confirmado && t.data >= limite);
     if (!aguardando.length) return null;
     const confirmar = (lista, valor) => {
-      const extras = [];
-      const linhas = lista.map(t => {
-        const antes = t.valor, novo = valor ?? t.valor;
-        t.valor = novo; t.confirmado = true; t.aguardandoValor = false;
-        const f = (obj.fixos || []).find(x => x.id === t.fixoId);
-        if (f?.variavel && !f.moeda) f.valor = novo; // o próximo mês já começa estimando este valor (conta em moeda estrangeira segue estimada pela cotação)
-        if (t.fatura && f) { // concilia: o que foi pago x o que foi registrado no ciclo
-          const c = cicloFatura(f, t.data.slice(0, 7), obj.transacoes), dif = r2(novo - c.total);
-          extras.push(`💳 Compras registradas no ciclo (${ddmm(c.de)} a ${ddmm(c.ate)}): ${brl(c.total)}`);
-          if (dif >= 1) {
-            obj.conciliacao = { valor: dif, data: c.ate, membro: t.membro, criada: new Date().toISOString() };
-            extras.push(`Sobram ${brl(dif)} sem registro (compras antigas, juros...). Quer lançar como gasto do cartão sem detalhe? Responda *sim*.`);
-          } else if (dif <= -1) extras.push(`Você registrou ${brl(-dif)} a mais do que pagou: vale conferir as compras desse ciclo.`);
-          else extras.push('Bate com o que você registrou. ✅');
-        }
-        return `✅ ${t.descricao}: ${brl(novo)}${valor != null && antes !== novo ? ` (estava ${brl(antes)})` : ''}`;
-      });
+      const { linhas, extras } = confirmarValor(obj, lista, valor);
       gravar(obj);
       return `${linhas.join('\n')}${extras.length ? `\n\n${extras.join('\n')}` : ''}\n\nJá está registrado. É só pagar! 💸`;
     };
@@ -182,7 +230,7 @@ module.exports = function criarFixos({ ler, gravar, enviarWhatsApp, membrosWhats
     const obj = ler();
     const jaAvisados = obj.avisos?.data === hoje ? obj.avisos.ids : [];
     const fixos = new Map((obj.fixos || []).map(f => [f.id, f]));
-    const pend = obj.transacoes.filter(t => t.fixoId && t.tipo === 'despesa' && t.data === hoje && fixos.get(t.fixoId)?.avisar && !jaAvisados.includes(t.id));
+    const pend = obj.transacoes.filter(t => t.fixoId && t.tipo === 'despesa' && t.data === hoje && !t.pago && fixos.get(t.fixoId)?.avisar && !jaAvisados.includes(t.id));
     if (!pend.length) return 0;
     for (const t of pend) if (t.fatura) t.ciclo = cicloFatura(fixos.get(t.fixoId), t.data.slice(0, 7), obj.transacoes); // soma das compras do cartão, como referência
 
@@ -236,6 +284,6 @@ module.exports = function criarFixos({ ler, gravar, enviarWhatsApp, membrosWhats
   // Confere a cada minuto (e logo ao subir, para recuperar o dia se o servidor reiniciou)
   const iniciar = () => { setTimeout(ciclo, 5000); setInterval(ciclo, 60000); };
 
-  return { limparFixo, gerarFixosDoMes, aplicarEdicao, removerGerados, limparOrfas, cicloFatura, avisarVencimentos, responderValor, taxasDe, mesAtual, hoje: () => agoraSP().slice(0, 10), iniciar };
+  return { limparFixo, gerarFixosDoMes, aplicarEdicao, removerGerados, limparOrfas, cicloFatura, avisarVencimentos, responderValor, responderPagamento, definirPago, taxasDe, mesAtual, hoje: () => agoraSP().slice(0, 10), iniciar };
 };
 module.exports.dataDoMes = dataDoMes;

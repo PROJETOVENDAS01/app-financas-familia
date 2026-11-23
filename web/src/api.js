@@ -24,6 +24,7 @@ export const api = {
   criar: t => req('POST', '/api/transacoes', t),
   editar: (id, t) => req('PUT', '/api/transacoes/' + id, t),
   excluir: id => req('DELETE', '/api/transacoes/' + id),
+  pagar: (id, pago) => req('POST', `/api/transacoes/${id}/pago`, { pago }),
   cotacao: moeda => req('GET', '/api/cotacao/' + moeda),
   config: () => req('GET', '/api/config'),
   salvarConfig: c => req('PUT', '/api/config', c),

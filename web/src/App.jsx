@@ -95,6 +95,7 @@ export default function App() {
   const salvarFixo = (dados, id) => executar(async () => { if (id) await api.editarFixo(id, dados); else await api.criarFixo(dados); avisar(id ? 'Conta fixa atualizada' : 'Conta fixa criada'); });
   const excluirFixo = f => confirm(`Excluir “${f.descricao}”? Os lançamentos deste mês e dos próximos também saem; os dos meses anteriores continuam no histórico.`) && executar(async () => { await api.excluirFixo(f.id); avisar('Conta fixa excluída'); });
   const excluirCompra = parcelas => confirm(`Excluir a compra parcelada “${parcelas[0].descricao || parcelas[0].categoria}” inteira (${parcelas.length} parcelas, inclusive as já pagas)?`) && executar(async () => { for (const p of parcelas) await api.excluir(p.id); avisar('Compra parcelada excluída'); });
+  const pagar = (t, pago) => executar(async () => { await api.pagar(t.id, pago); avisar(pago ? 'Conta marcada como paga' : 'Pagamento desfeito'); });
   const salvarConfig = c => { setConfig(c); executar(async () => { await api.salvarConfig(c); avisar('Salvo'); }); };
 
   if (!logado) return <Login erro={erroLogin} aoEntrar={c => { salvarChave(c); setErroLogin(''); setLogado(true); }} />;
@@ -133,7 +134,7 @@ export default function App() {
             {view === 'geral' && <Overview {...comum} ir={setView} />}
             {view === 'transacoes' && <Transacoes {...comum} transacoes={transacoes} editar={setGaveta} excluir={excluir} nova={() => setGaveta({})} />}
             {view === 'metas' && <Metas {...comum} salvarConfig={salvarConfig} />}
-            {view === 'fixos' && <Fixos {...comum} fixos={fixos} salvar={salvarFixo} excluir={excluirFixo} excluirCompra={excluirCompra} />}
+            {view === 'fixos' && <Fixos {...comum} todas={transacoes} pagar={pagar} fixos={fixos} salvar={salvarFixo} excluir={excluirFixo} excluirCompra={excluirCompra} />}
             {view === 'membros' && <Membros {...comum} salvarConfig={salvarConfig} />}
             {view === 'assistente' && <Assistente mes={mes} />}
           </>}

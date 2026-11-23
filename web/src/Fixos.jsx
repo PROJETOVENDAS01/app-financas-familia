@@ -1,20 +1,32 @@
 import React, { useEffect, useState } from 'react';
 import { Card, Ico, Vazio } from './ui.jsx';
-import { CATS, DESPESAS, catInfo, brl, soma, mesAtual, mesLabel } from './util.js';
+import { CATS, DESPESAS, catInfo, brl, brl0, soma, mesAtual, mesLabel, hoje } from './util.js';
 import { api } from './api.js';
+import { projetar } from './projecao.js';
 
 const SIMB = { BRL: 'R$', USD: 'US$', EUR: '€', GBP: '£' };
 const num2 = n => Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const novo = tipo => ({ tipo, valor: '', descricao: '', categoria: tipo === 'receita' ? 'Renda' : 'Moradia', subcategoria: '', membro: 'Família', dia: String(new Date().getDate()), avisar: true, variavel: false, fatura: false, fechamento: '', cartao: false, moeda: 'BRL', ativo: true });
 
-function Linha({ f, info, aprox, editar, excluir }) {
+// Botão "paguei" da despesa do mês (tx = lançamento do mês dessa conta fixa)
+function Paguei({ tx, pagar }) {
+  const atrasada = !tx.pago && tx.data < hoje();
+  return (
+    <button className={`pg ${tx.pago ? 'on' : atrasada ? 'late' : ''}`} aria-pressed={!!tx.pago} onClick={() => pagar(tx, !tx.pago)}>
+      {tx.pago ? `✓ Paga${tx.pagoEm ? ` em ${tx.pagoEm.slice(8)}/${tx.pagoEm.slice(5, 7)}` : ''}` : 'Marcar como paga'}
+    </button>
+  );
+}
+
+function Linha({ f, tx, pagar, info, aprox, editar, excluir }) {
   const c = info(f.categoria);
   return (
     <div className="li" style={f.ativo ? undefined : { opacity: .55 }}>
       <div className="dot" aria-hidden="true">{c.e}</div>
       <div style={{ minWidth: 0 }}>
-        <div className="n">{f.descricao}{!f.ativo && <span className="wa">Pausada</span>}{f.ativo && f.avisar && <span className="wa">Avisa no WhatsApp</span>}{f.fatura && <span className="wa cc">Fatura do cartão</span>}{f.cartao && <span className="wa cc">Cartão</span>}{f.variavel && !f.fatura && <span className="wa">Valor varia</span>}</div>
+        <div className="n">{f.descricao}{!f.ativo && <span className="wa">Pausada</span>}{f.ativo && f.avisar && <span className="wa">Avisa no WhatsApp</span>}{f.fatura && <span className="wa cc">Fatura do cartão</span>}{f.cartao && <span className="wa cc">Cartão</span>}{f.variavel && !f.fatura && <span className="wa">Valor varia</span>}{tx && f.tipo === 'despesa' && !tx.pago && tx.data < hoje() && <span className="wa pend">Venceu</span>}</div>
         <div className="m">Todo dia {f.dia} · {f.categoria}{f.subcategoria ? ` › ${f.subcategoria}` : ''} · {f.membro}</div>
+        {tx && f.tipo === 'despesa' && <Paguei tx={tx} pagar={pagar} />}
       </div>
       <div className={`v ${f.tipo === 'receita' ? 'inc' : 'exp'}`}>{f.tipo === 'receita' ? '+' : '−'} {f.moeda ? `${SIMB[f.moeda]} ${num2(f.valor)}` : brl(f.valor)}{f.moeda && aprox != null && <small style={{ display: 'block', fontWeight: 600, opacity: .7 }}>≈ {brl(aprox)}</small>}</div>
       <div className="acts">
@@ -115,8 +127,32 @@ function Parcelados({ transacoes, mes, info, excluirCompra }) {
   );
 }
 
-export function Fixos({ fixos, config, nomesMembros, transacoes, mes, salvar, excluir, excluirCompra }) {
+// Próximos 6 meses: o que já está comprometido (contas fixas + parcelas) e, se quiser, a média do dia a dia
+function Projecao({ transacoes, fixos, taxas }) {
+  const [dia, setDia] = useState(true);
+  const meses = projetar({ transacoes, fixos, taxas, de: mesAtual(), mediaDia: dia });
+  const topo = Math.max(...meses.map(m => Math.max(m.despesas, m.receitas)), 1);
+  return (
+    <Card className="c12" tilt={false}>
+      <h3>Próximos meses</h3>
+      <label className="check"><input type="checkbox" checked={dia} onChange={e => setDia(e.target.checked)} />Incluir o gasto do dia a dia (média dos últimos 3 meses)</label>
+      {meses.map(m => (
+        <div className="prj" key={m.ym}>
+          <div className="prj-hd"><b>{mesLabel(m.ym)}</b><b className={m.sobra >= 0 ? 'inc' : 'exp'}>{m.sobra >= 0 ? 'Sobra' : 'Falta'} {brl0(Math.abs(m.sobra))}</b></div>
+          <div className="bar" title="Despesas"><i style={{ width: `${m.despesas / topo * 100}%`, background: m.sobra >= 0 ? 'var(--brand)' : 'var(--exp)' }} /></div>
+          <div className="m">Receitas {brl0(m.receitas)} · Despesas {brl0(m.despesas)} <span className="prj-det">(fixas {brl0(m.fixas)}{m.parcelas > 0 ? ` · parcelas ${brl0(m.parcelas)}` : ''}{m.outros > 0 ? ` · agendados ${brl0(m.outros)}` : ''}{m.media > 0 ? ` · dia a dia ${brl0(m.media)}` : ''})</span></div>
+        </div>
+      ))}
+      <div className="sub" style={{ marginTop: 10 }}>Considera as contas fixas ativas, as parcelas já lançadas e o que estiver agendado. A fatura do cartão não é somada de novo, porque as compras dela já entram aqui. Receitas: só as fixas.</div>
+    </Card>
+  );
+}
+
+export function Fixos({ fixos, config, nomesMembros, transacoes, todas, mes, salvar, excluir, excluirCompra, pagar }) {
   const [gaveta, setGaveta] = useState(null);
+  const doMes = new Map(todas.filter(t => t.fixoId && t.data.startsWith(mes)).map(t => [t.fixoId, t])); // lançamento deste mês de cada conta fixa
+  const contasDoMes = [...doMes.values()].filter(t => t.tipo === 'despesa');
+  const faltam = contasDoMes.filter(t => !t.pago);
   const cats = config.categorias?.length ? config.categorias : DESPESAS;
   const info = n => (config.categorias || []).find(c => c.n === n) || catInfo(n);
   const ativas = fixos.filter(f => f.ativo);
@@ -132,7 +168,7 @@ export function Fixos({ fixos, config, nomesMembros, transacoes, mes, salvar, ex
   const ordenar = l => [...l].sort((a, b) => a.dia - b.dia);
   const lista = (l, tipo) => l.length === 0
     ? <Vazio titulo={tipo === 'receita' ? 'Nenhuma receita fixa' : 'Nenhuma despesa fixa'} texto={tipo === 'receita' ? 'Cadastre o salário e outras entradas que se repetem todo mês.' : 'Cadastre aluguel, escola, internet e outras contas que se repetem todo mês.'} acao="Adicionar" onAcao={() => setGaveta(novo(tipo))} />
-    : ordenar(l).map(f => <Linha key={f.id} f={f} info={info} aprox={f.moeda && taxas[f.moeda] ? f.valor * taxas[f.moeda] : null} editar={x => setGaveta({ ...x, valor: String(x.valor).replace('.', ','), dia: String(x.dia), moeda: x.moeda || 'BRL', fechamento: x.fechamento ? String(x.fechamento) : '' })} excluir={excluir} />);
+    : ordenar(l).map(f => <Linha key={f.id} f={f} tx={doMes.get(f.id)} pagar={pagar} info={info} aprox={f.moeda && taxas[f.moeda] ? f.valor * taxas[f.moeda] : null} editar={x => setGaveta({ ...x, valor: String(x.valor).replace('.', ','), dia: String(x.dia), moeda: x.moeda || 'BRL', fechamento: x.fechamento ? String(x.fechamento) : '' })} excluir={excluir} />);
   return (
     <>
     <div className="bento">
@@ -145,8 +181,13 @@ export function Fixos({ fixos, config, nomesMembros, transacoes, mes, salvar, ex
         <div className="sub" style={{ marginTop: 12 }}>Os lançamentos aparecem sozinhos no começo de cada mês. As despesas marcadas para avisar chegam no WhatsApp de manhã, no dia do vencimento.</div>
         <div className="btns"><button className="btn p" onClick={() => setGaveta(novo('despesa'))}>Nova conta fixa</button></div>
       </Card>
-      <Card className="c6" tilt={false}><h3>Despesas fixas</h3>{lista(despesas, 'despesa')}</Card>
+      <Card className="c6" tilt={false}>
+        <h3>Despesas fixas</h3>
+        {contasDoMes.length > 0 && <div className="sub" style={{ marginBottom: 6 }}>{mesLabel(mes)}: {contasDoMes.length - faltam.length} de {contasDoMes.length} pagas{faltam.length > 0 ? <> · falta <b className="exp">{brl(soma(faltam, t => t.valor))}</b></> : ' 🎉'}</div>}
+        {lista(despesas, 'despesa')}
+      </Card>
       <Card className="c6" tilt={false}><h3>Receitas fixas</h3>{lista(receitas, 'receita')}</Card>
+      <Projecao transacoes={todas} fixos={fixos} taxas={taxas} />
       <Parcelados transacoes={transacoes} mes={mes} info={info} excluirCompra={excluirCompra} />
     </div>
     {/* fora do .bento: o perspective dele prenderia o painel fixo dentro da grade */}
