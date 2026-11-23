@@ -104,16 +104,36 @@ function limpar(b) {
 
 app.get('/api/transacoes', (req, res) => res.json(ler().transacoes));
 
-app.post('/api/transacoes', (req, res) => {
-  const t = limpar(req.body);
-  if (!t) return res.status(400).json({ erro: 'tipo/valor inválido' });
-  const obj = ler();
-  const id = Number.isFinite(Number(req.body.id)) ? Number(req.body.id) : Date.now();
-  const n = Math.trunc(Number(req.body.parcelas)) || 1; // valor informado = total; vira uma parcela por mês
-  if (n > 1 && t.tipo === 'despesa') t.cartao = true; // parcelado = cartão de crédito
-  obj.transacoes.push(...parcelar({ id, ...t }, t.tipo === 'despesa' ? n : 1));
-  gravar(obj);
-  res.json({ success: true, id });
+// Cotação atual (para o formulário mostrar a conta antes de salvar)
+app.get('/api/cotacao/:moeda', async (req, res) => {
+  const q = await cotar(String(req.params.moeda).toUpperCase());
+  if (!q) return res.status(503).json({ erro: 'cotação indisponível agora' });
+  res.json(q);
+});
+
+app.post('/api/transacoes', async (req, res) => {
+  try {
+    const moeda = MOEDAS.includes(req.body.moeda) ? req.body.moeda : null;
+    let extra = {};
+    if (moeda) { // valor veio em moeda estrangeira: converte para reais com a cotação do momento do salvamento
+      const q = await cotar(moeda), original = Number(req.body.valor);
+      if (!q) return res.status(503).json({ erro: 'Não consegui buscar a cotação agora. Tente de novo ou informe o valor em reais.' });
+      req.body = { ...req.body, valor: Math.round(original * q.taxa * 100) / 100 };
+      extra = { moeda, valorOriginal: original, cotacao: q.taxa };
+    }
+    const t = limpar(req.body);
+    if (!t) return res.status(400).json({ erro: 'tipo/valor inválido' });
+    const obj = ler();
+    const id = Number.isFinite(Number(req.body.id)) ? Number(req.body.id) : Date.now();
+    const n = Math.trunc(Number(req.body.parcelas)) || 1; // valor informado = total; vira uma parcela por mês
+    if (n > 1 && t.tipo === 'despesa') t.cartao = true; // parcelado = cartão de crédito
+    obj.transacoes.push(...parcelar({ id, ...t, ...extra }, t.tipo === 'despesa' ? n : 1));
+    gravar(obj);
+    res.json({ success: true, id });
+  } catch (e) {
+    console.error('❌ Erro ao salvar transação:', e.message);
+    res.status(500).json({ erro: 'Erro ao salvar. Tente de novo.' });
+  }
 });
 
 app.put('/api/transacoes/:id', (req, res) => {

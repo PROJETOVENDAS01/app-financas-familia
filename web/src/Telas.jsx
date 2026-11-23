@@ -235,16 +235,24 @@ export function Assistente({ mes }) {
 export function Gaveta({ tx, mes, nomesMembros, fechar, salvar }) {
   const editando = !!tx?.id;
   const catObj = CATS.find(c => c.n === (tx?.categoria || 'Alimentação'));
-  const [f, setF] = useState(() => ({ tipo: 'despesa', valor: '', descricao: '', categoria: 'Alimentação', subcategoria: '', membro: nomesMembros.find(n => n !== 'Família') || 'Família', data: `${mes}-${String(Math.min(new Date().getDate(), 28)).padStart(2, '0')}`, repetir: false, cartao: false, parcelas: '1', ...tx }));
+  const [f, setF] = useState(() => ({ tipo: 'despesa', valor: '', descricao: '', categoria: 'Alimentação', subcategoria: '', membro: nomesMembros.find(n => n !== 'Família') || 'Família', data: `${mes}-${String(Math.min(new Date().getDate(), 28)).padStart(2, '0')}`, repetir: false, cartao: false, parcelas: '1', ...tx, moeda: 'BRL' }));
   const [erro, setErro] = useState('');
   const set = k => e => setF({ ...f, [k]: e.target.value });
+  const estrangeira = !editando && f.moeda !== 'BRL'; // valor digitado em dólar/euro/libra: o servidor converte para reais ao salvar
+  const [cot, setCot] = useState(null); // { taxa, quando } | 'erro' | null (buscando)
+  useEffect(() => {
+    if (!estrangeira) return setCot(null);
+    let vivo = true; setCot(null);
+    api.cotacao(f.moeda).then(c => vivo && setCot(c)).catch(() => vivo && setCot('erro'));
+    return () => { vivo = false; };
+  }, [f.moeda, estrangeira]);
   const catAtual = CATS.find(c => c.n === f.categoria);
   const enviar = async e => {
     e.preventDefault();
     const valor = Number(String(f.valor).replace(',', '.'));
     if (!(valor > 0)) return setErro('Informe um valor maior que zero.');
     setErro('');
-    await salvar({ tipo: f.tipo, valor, descricao: f.descricao.trim(), categoria: f.categoria, subcategoria: f.subcategoria, membro: f.membro, data: f.data, cartao: f.tipo === 'despesa' && !!f.cartao, parcelas: !editando && f.tipo === 'despesa' && f.cartao ? Number(f.parcelas) || 1 : undefined }, tx?.id, f.repetir);
+    await salvar({ tipo: f.tipo, valor, descricao: f.descricao.trim(), categoria: f.categoria, subcategoria: f.subcategoria, membro: f.membro, data: f.data, moeda: estrangeira ? f.moeda : undefined, cartao: f.tipo === 'despesa' && !!f.cartao, parcelas: !editando && f.tipo === 'despesa' && f.cartao ? Number(f.parcelas) || 1 : undefined }, tx?.id, f.repetir);
   };
   return (
     <>
@@ -255,7 +263,20 @@ export function Gaveta({ tx, mes, nomesMembros, fechar, salvar }) {
           <button type="button" className={f.tipo === 'despesa' ? 'on' : ''} onClick={() => setF({ ...f, tipo: 'despesa', categoria: f.categoria === 'Renda' ? 'Alimentação' : f.categoria })}>Despesa</button>
           <button type="button" className={f.tipo === 'receita' ? 'on' : ''} onClick={() => setF({ ...f, tipo: 'receita', categoria: 'Renda' })}>Receita</button>
         </div>
-        <label className="f">Valor (R$)<input className="field" inputMode="decimal" value={f.valor} onChange={set('valor')} placeholder="0,00" autoFocus /></label>
+        <label className="f">Valor ({{ BRL: 'R$', USD: 'US$', EUR: '€', GBP: '£' }[f.moeda]})
+          <div style={{ display: 'flex', gap: 8 }}>
+            {!editando && <select className="field" style={{ width: 112, flex: 'none' }} value={f.moeda} onChange={set('moeda')} aria-label="Moeda"><option value="BRL">Real</option><option value="USD">Dólar</option><option value="EUR">Euro</option><option value="GBP">Libra</option></select>}
+            <input className="field" style={{ flex: 1 }} inputMode="decimal" value={f.valor} onChange={set('valor')} placeholder="0,00" autoFocus />
+          </div>
+        </label>
+        {estrangeira && (cot === 'erro'
+          ? <div className="err">Não consegui buscar a cotação agora. Tente de novo em instantes ou informe o valor em reais.</div>
+          : !cot ? <div className="sub">Buscando a cotação…</div>
+          : <div className="sub" style={{ marginBottom: 10 }}>{(() => {
+              const v = Number(String(f.valor).replace(',', '.')), [dia, hora] = cot.quando.split(' '), quando = `${dia.slice(8)}/${dia.slice(5, 7)}${hora ? ' ' + hora.slice(0, 5) : ''}`;
+              const taxa = cot.taxa.toLocaleString('pt-BR', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+              return v > 0 ? <>≈ <b>{brl(Math.round(v * cot.taxa * 100) / 100)}</b> em reais (× R$ {taxa}, cotação de {quando}). Será salvo em reais.</> : <>Cotação de {quando}: R$ {taxa}. Digite o valor para ver em reais.</>;
+            })()}</div>)}
         {erro && <div className="err">{erro}</div>}
         <label className="f">Descrição<input className="field" value={f.descricao} onChange={set('descricao')} placeholder="Ex.: Supermercado" maxLength={100} /></label>
         <label className="f">Categoria<select className="field" value={f.categoria} onChange={e => setF({ ...f, categoria: e.target.value, subcategoria: '' })}>{CATS.map(c => <option key={c.n}>{c.n}</option>)}</select></label>
