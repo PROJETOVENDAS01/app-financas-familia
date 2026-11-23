@@ -62,7 +62,7 @@ h3 button.link{background:none;border:0;font-size:13px;color:var(--brand);font-w
 .dot{width:40px;height:40px;border-radius:14px;display:grid;place-items:center;font-size:18px;background:var(--chip);flex:none}
 .li .n{font-weight:700}.li .m{font-size:12px;color:var(--sub)}.li .v{margin-left:auto;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}
 .li .acts{display:flex;gap:2px}
-.wa{font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;background:#25d36622;color:#16a34a;margin-left:6px}
+.wa{display:inline-block;white-space:nowrap;margin-top:2px;font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;background:#25d36622;color:#16a34a;margin-left:6px}
 .empty{text-align:center;padding:28px 12px;color:var(--sub);font-size:14px}.empty b{display:block;color:var(--ink);font-size:16px;margin-bottom:4px}
 .toolbar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
 .field{background:var(--field);border:1px solid var(--rule);border-radius:12px;padding:10px 12px;font-size:14px;min-width:0}
@@ -113,3 +113,32 @@ label.f{display:block;font-size:13px;font-weight:600;color:var(--sub);margin-bot
 .gc-bar{height:5px;border-radius:3px;background:var(--track);margin-top:4px;overflow:hidden}.gc-bar i{display:block;height:100%;border-radius:3px;background:var(--c)}
 .gc-empty{font-size:13px;color:var(--sub)}
 .wa.cc{background:color-mix(in srgb,#8b5cf6 18%,transparent);color:#7c3aed}:root[data-theme=dark] .wa.cc{color:#c4b5fd}
+/* Celular: barra inferior, botão + flutuante, listas em grade e campos de 16px (o iPhone dá zoom em campo menor) */
+.sm,.sair-m,.fab{display:none}
+@media(max-width:700px){
+  .app{padding:12px 12px calc(92px + env(safe-area-inset-bottom))}
+  .side{position:fixed;left:0;right:0;bottom:0;top:auto;z-index:35;display:block;overflow:visible;padding:6px 6px calc(6px + env(safe-area-inset-bottom));border-radius:20px 20px 0 0;border-width:1px 0 0;background:color-mix(in srgb,var(--bg) 90%,transparent)}
+  .side nav{display:flex;gap:2px}
+  .side>.nav{display:none}
+  .nav{flex:1 1 0;min-width:0;flex-direction:column;justify-content:center;gap:3px;height:54px;padding:4px 2px;font-size:10px;letter-spacing:-.01em;border-radius:14px}
+  .nav .lg{display:none}.nav .sm{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+  .tools{gap:8px}
+  .pill{order:1;flex:1 1 100%}.pill span{font-size:14px;white-space:nowrap}
+  .tools>.btn:not(.p){order:2;flex:1}
+  .sair-m{display:block;order:3}
+  .hd-nova{display:none}
+  .fab{display:grid;place-items:center;position:fixed;right:16px;bottom:calc(76px + env(safe-area-inset-bottom));width:54px;height:54px;border-radius:50%;border:0;background:var(--brandg);color:#fff;font-size:30px;line-height:1;z-index:34;box-shadow:0 14px 30px -8px var(--brand)}
+  .toast{bottom:calc(92px + env(safe-area-inset-bottom));max-width:calc(100% - 32px);text-align:center}
+  .field,select.field{font-size:16px}
+  .drawer{width:100%;border-left:0;padding:18px 16px calc(28px + env(safe-area-inset-bottom))}
+  .round{width:38px;height:38px}
+  .li{display:grid;grid-template-columns:38px minmax(0,1fr) auto;column-gap:12px;row-gap:2px;align-items:center}
+  .li .dot{grid-row:1/span 2;width:38px;height:38px}
+  .li>div:nth-child(2){grid-row:1/span 2}
+  .li .v{grid-column:3;grid-row:1;margin-left:0;text-align:right}
+  .li .acts{grid-column:3;grid-row:2;justify-self:end}
+  .check input{width:20px;height:20px;flex:none}
+  .btn{min-height:44px}
+  .mcard .val{font-size:22px}
+}
+@media(max-width:360px){.nav{font-size:9px}.big{font-size:32px}}

@@ -18,11 +18,11 @@ export function Transacoes({ transacoes, mes, nomesMembros, editar, excluir, nov
   return (
     <Card tilt={false}>
       <div className="toolbar">
-        <input className="field grow" placeholder="Buscar por descrição, categoria ou membro" value={q} onChange={e => setQ(e.target.value)} aria-label="Buscar" />
+        <input className="field grow" placeholder="Buscar lançamento" value={q} onChange={e => setQ(e.target.value)} aria-label="Buscar" />
         <select className="field" value={tipo} onChange={e => setTipo(e.target.value)} aria-label="Tipo"><option value="">Todos os tipos</option><option value="despesa">Despesas</option><option value="receita">Receitas</option></select>
         <select className="field" value={cat} onChange={e => setCat(e.target.value)} aria-label="Categoria"><option value="">Todas as categorias</option>{CATS.map(c => <option key={c.n}>{c.n}</option>)}</select>
         <select className="field" value={mem} onChange={e => setMem(e.target.value)} aria-label="Membro"><option value="">Todos os membros</option>{nomesMembros.map(n => <option key={n}>{n}</option>)}</select>
-        <button className="btn p" onClick={nova}>Nova transação</button>
+        <button className="btn p hd-nova" onClick={nova}>Nova transação</button>
       </div>
       <div className="sub" style={{ marginBottom: 6 }}>{lista.length} lançamentos · Receitas <b className="inc">{brl(rec)}</b> · Despesas <b className="exp">{brl(desp)}</b></div>
       {lista.length === 0

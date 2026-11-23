@@ -15,6 +15,7 @@ const NAV = [
   ['assistente', 'Assistente', <svg key="e" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" /></svg>]
 ];
 const TITULOS = { geral: 'Visão geral', transacoes: 'Transações', metas: 'Metas e orçamento', fixos: 'Contas fixas', membros: 'Por membro', assistente: 'Assistente' };
+const CURTO = { geral: 'Geral', transacoes: 'Extrato', metas: 'Metas', fixos: 'Fixas', membros: 'Membros', assistente: 'Assistente' }; // nomes da barra inferior no celular
 const TEMAS = ['auto', 'light', 'dark'], ROTULO_TEMA = { auto: 'Tema: automático', light: 'Tema: claro', dark: 'Tema: escuro' };
 
 function useTema() {
@@ -107,7 +108,7 @@ export default function App() {
           <div className="brand"><div className="logo">C</div>Casa</div>
           <nav aria-label="Principal">
             {NAV.map(([id, nome, icone]) => (
-              <button key={id} className={`nav ${view === id ? 'on' : ''}`} aria-current={view === id ? 'page' : undefined} onClick={() => setView(id)}>{icone}<span>{nome}</span></button>
+              <button key={id} className={`nav ${view === id ? 'on' : ''}`} aria-current={view === id ? 'page' : undefined} onClick={() => setView(id)}>{icone}<span className="lg">{nome}</span><span className="sm">{CURTO[id]}</span></button>
             ))}
           </nav>
           <div className="sep" />
@@ -124,7 +125,8 @@ export default function App() {
                 <span>{mesLabel(mes)}</span>
                 <button className="round" aria-label="Próximo mês" onClick={() => setMes(addMes(mes, 1))}><Ico d="M9 18l6-6-6-6" /></button>
               </div>
-              <button className="btn p" onClick={() => setGaveta({})}>Nova transação</button>
+              <button className="btn sair-m" onClick={() => { sairDaConta(); setLogado(false); }}>Sair</button>
+              <button className="btn p hd-nova" onClick={() => setGaveta({})}>Nova transação</button>
             </div>
           </header>
           {transacoes === null ? <div className="skel" /> : <>
@@ -138,6 +140,7 @@ export default function App() {
         </main>
       </div>
       {gaveta && <Gaveta tx={gaveta} mes={mes} nomesMembros={nomesMembros} fechar={() => setGaveta(null)} salvar={salvar} />}
+      {!gaveta && view !== 'assistente' && <button className="fab" aria-label="Nova transação" onClick={() => setGaveta({})}>+</button>}
       {aviso && <div className="toast" role="status">{aviso}</div>}
     </div>
   );
