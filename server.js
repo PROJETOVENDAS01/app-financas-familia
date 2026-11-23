@@ -246,12 +246,15 @@ app.post('/webhook/notificacao', (req, res) => {
   if (!membro) return res.status(401).json({ erro: 'não autorizado' });
   // texto: corpo puro, {titulo, texto}, campos comuns (title/text/body/message...) ou, na dúvida, o JSON inteiro (a IA lê do mesmo jeito)
   const b = req.body;
+  // Message487 só dá o evento como entregue se a resposta trouxer {"status":"accepted","event_id":<o mesmo id>}; sem isso ele marca "Needs attention" mesmo com HTTP 200
+  const ack = { ok: true, status: 'accepted', ...(b && typeof b === 'object' && b.event_id ? { event_id: b.event_id } : {}) };
+  if (b && typeof b === 'object' && b.message_type === 'test') { console.log(`🏦 Teste de notificação recebido (${membro})`); return res.json(ack); } // o "evento de teste" do app: confirma e não gasta a IA
   const CAMPOS = ['titulo', 'title', 'texto', 'text', 'bigText', 'body', 'message', 'content'];
   const achados = b && typeof b === 'object' ? CAMPOS.map(k => b[k]).filter(v => typeof v === 'string' && v.trim()) : [];
   const temCampo = b && typeof b === 'object' && CAMPOS.some(k => k in b); // formato conhecido, mas vazio: não vale gastar a IA
   const texto = (typeof b === 'string' ? b : achados.length ? achados.join(' — ') : temCampo ? '' : b && Object.keys(b).length ? JSON.stringify({ ...b, token: undefined }) : '').trim().slice(0, 1000);
   if (!texto) return res.status(400).json({ erro: 'texto vazio' });
-  res.json({ ok: true }); // responde já: o celular não precisa esperar a IA
+  res.json(ack); // responde já: o celular não precisa esperar a IA
   notificacoes.registrar(texto, membro)
     .then(r => { console.log(`🏦 Notificação (${membro}): ${r.status}`); return r.msg && avisarMembro(membro, r.msg); })
     .catch(e => console.error('❌ Erro na notificação do banco:', e.message));
