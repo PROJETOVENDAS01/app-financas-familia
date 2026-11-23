@@ -844,7 +844,9 @@ async function enviarWhatsApp(numero, mensagem) {
 }
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+const servidor = app.listen(PORT, () => {
+  // maiores que o tempo ocioso do proxy (Easypanel/Traefik): com o padrão do Node (5 s) o proxy reaproveita uma conexão que o servidor já fechou e devolve 502 sem mensagem, principalmente em POST
+  servidor.keepAliveTimeout = 65000; servidor.headersTimeout = 66000;
   console.log(`🚀 Servidor rodando em http://localhost:${PORT}`);
   console.log(`👥 Números com membro definido: ${Object.keys(MEMBROS_WHATSAPP).length} (${Object.values(MEMBROS_WHATSAPP).join(', ') || 'nenhum'})`);
   console.log(`📱 Webhook: POST http://localhost:${PORT}/webhook/whatsapp`);

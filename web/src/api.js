@@ -7,12 +7,15 @@ export const sairDaConta = () => { try { localStorage.removeItem(K); } catch { /
 
 export class NaoAutorizado extends Error {}
 
-async function req(metodo, caminho, corpo) {
-  const r = await fetch(caminho, {
+// repetir: tenta de novo uma vez se o proxy devolver 502 (conexão reaproveitada que o servidor já tinha fechado). Só para chamadas que podem repetir sem efeito duplicado.
+async function req(metodo, caminho, corpo, repetir = metodo === 'GET') {
+  const enviar = () => fetch(caminho, {
     method: metodo,
     headers: { Authorization: 'Bearer ' + (ler() || ''), 'Content-Type': 'application/json' },
     body: corpo ? JSON.stringify(corpo) : undefined
   });
+  let r = await enviar();
+  if (r.status === 502 && repetir) r = await enviar();
   if (r.status === 401) throw new NaoAutorizado();
   const dados = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(dados.erro || 'Erro ' + r.status);
@@ -24,7 +27,7 @@ export const api = {
   criar: t => req('POST', '/api/transacoes', t),
   editar: (id, t) => req('PUT', '/api/transacoes/' + id, t),
   excluir: id => req('DELETE', '/api/transacoes/' + id),
-  pagar: (id, pago) => req('POST', `/api/transacoes/${id}/pago`, { pago }),
+  pagar: (id, pago) => req('POST', `/api/transacoes/${id}/pago`, { pago }, true),
   cotacao: moeda => req('GET', '/api/cotacao/' + moeda),
   config: () => req('GET', '/api/config'),
   salvarConfig: c => req('PUT', '/api/config', c),
@@ -32,5 +35,5 @@ export const api = {
   criarFixo: f => req('POST', '/api/fixos', f),
   editarFixo: (id, f) => req('PUT', '/api/fixos/' + id, f),
   excluirFixo: id => req('DELETE', '/api/fixos/' + id),
-  perguntar: (pergunta, mes, historico) => req('POST', '/api/assistente', { pergunta, mes, historico })
+  perguntar: (pergunta, mes, historico) => req('POST', '/api/assistente', { pergunta, mes, historico }, true)
 };
