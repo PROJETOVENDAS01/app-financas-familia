@@ -211,7 +211,7 @@ export function Membros({ transacoes, config, mes, nomesMembros, salvarConfig })
 }
 
 /* ---------- Assistente ---------- */
-const SUGESTOES = ['Onde posso economizar este mês?', 'Como foi o mês comparado ao anterior?', 'Quanto gastamos com alimentação?', 'Vamos fechar dentro das metas?'];
+const SUGESTOES = ['Onde posso economizar este mês?', 'Como foi o mês comparado ao anterior?', 'Quanto gastamos no cartão de crédito?', 'Quais contas fixas ainda faltam pagar?', 'Vamos fechar dentro das metas?'];
 export function Assistente({ mes }) {
   const [msgs, setMsgs] = useState([]), [q, setQ] = useState(''), [espera, setEspera] = useState(false);
   const fim = useRef(null);
@@ -219,8 +219,9 @@ export function Assistente({ mes }) {
   const enviar = async texto => {
     const p = texto.trim(); if (!p || espera) return;
     setMsgs(m => [...m, { de: 'u', t: p }]); setQ(''); setEspera(true);
-    try { const { resposta } = await api.perguntar(p, mes); setMsgs(m => [...m, { de: 'a', t: resposta }]); }
-    catch (e) { setMsgs(m => [...m, { de: 'a', t: e.message }]); }
+    const historico = msgs.filter(m => !m.erro).map(m => ({ role: m.de === 'u' ? 'user' : 'assistant', content: m.t })); // a conversa até aqui, para perguntas de continuação
+    try { const { resposta } = await api.perguntar(p, mes, historico); setMsgs(m => [...m, { de: 'a', t: resposta }]); }
+    catch (e) { setMsgs(m => [...m, { de: 'a', t: e.message, erro: true }]); }
     setEspera(false);
   };
   return (
@@ -236,7 +237,7 @@ export function Assistente({ mes }) {
         <input className="field" value={q} onChange={e => setQ(e.target.value)} placeholder="Ex.: quanto o João gastou com transporte?" maxLength={500} aria-label="Sua pergunta" />
         <button className="btn p" type="submit">Perguntar</button>
       </form>
-      <div className="sub" style={{ marginTop: 12 }}>O assistente usa os lançamentos dos últimos 3 meses e as metas. Limite de 30 perguntas por hora.</div>
+      <div className="sub" style={{ marginTop: 12 }}>O assistente vê os lançamentos de 3 meses atrás até 3 meses à frente (com cartão, parcelas e contas fixas) e as metas. Pode perguntar de continuação, como “e a Carol?”. Limite de 30 perguntas por hora, somando o WhatsApp.</div>
     </Card>
   );
 }

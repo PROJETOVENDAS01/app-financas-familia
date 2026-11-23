@@ -32,5 +32,5 @@ export const api = {
   criarFixo: f => req('POST', '/api/fixos', f),
   editarFixo: (id, f) => req('PUT', '/api/fixos/' + id, f),
   excluirFixo: id => req('DELETE', '/api/fixos/' + id),
-  perguntar: (pergunta, mes) => req('POST', '/api/assistente', { pergunta, mes })
+  perguntar: (pergunta, mes, historico) => req('POST', '/api/assistente', { pergunta, mes, historico })
 };
