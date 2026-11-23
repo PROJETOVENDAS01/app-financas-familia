@@ -144,6 +144,7 @@ app.put('/api/transacoes/:id', (req, res) => {
   if (i < 0) return res.status(404).json({ erro: 'não encontrada' });
   const antes = obj.transacoes[i];
   obj.transacoes[i] = { ...antes, ...t }; // mantém id e origem
+  if (t.categoria !== antes.categoria || t.subcategoria !== (antes.subcategoria || '')) notificacoes.aprender(obj, obj.transacoes[i]); // corrigiu a categoria de uma compra vinda do banco: lembra para a próxima
   if (antes.variavel && !antes.confirmado && t.valor !== antes.valor) { // corrigiu o valor de uma conta variável: está confirmado
     Object.assign(obj.transacoes[i], { confirmado: true, aguardandoValor: false });
     const f = (obj.fixos || []).find(x => x.id === antes.fixoId);
@@ -226,6 +227,26 @@ app.delete('/api/fixos/:id', (req, res) => {
   fixos.removerGerados(obj, id, fixos.mesAtual());
   gravar(obj);
   res.json({ success: true });
+});
+
+// Notificações do banco: o celular (MacroDroid/Tasker) manda o texto e o app registra a compra sozinho (ver notificacoes.js).
+// NOTIF_TOKENS="token1=THIAGO BONI,token2=CAROL BONI": cada celular tem o seu token, e a compra entra no nome do dono.
+const NOTIF_TOKENS = Object.fromEntries((process.env.NOTIF_TOKENS || '').split(',').map(p => { const i = p.indexOf('='); return [p.slice(0, i).trim(), p.slice(i + 1).trim()]; }).filter(([t, m]) => t && m));
+const notificacoes = require('./notificacoes')({ ler, gravar, claudeTexto, categoriasAtivas, parcelar, hoje: () => hojeISO() });
+const avisarMembro = (membro, msg) => Promise.all(Object.keys(MEMBROS_WHATSAPP).filter(n => MEMBROS_WHATSAPP[n] === membro).map(n => enviarWhatsApp(n, msg)));
+
+app.use('/webhook/notificacao', express.text({ type: 'text/*', limit: '10kb' })); // o app do celular pode mandar só o texto
+app.post('/webhook/notificacao', (req, res) => {
+  if (!Object.keys(NOTIF_TOKENS).length) return res.status(503).json({ erro: 'NOTIF_TOKENS não configurado' });
+  const token = req.get('x-token') || req.body?.token || '';
+  const membro = Object.entries(NOTIF_TOKENS).find(([t]) => crypto.timingSafeEqual(hash(String(token)), hash(t)))?.[1];
+  if (!membro) return res.status(401).json({ erro: 'não autorizado' });
+  const texto = (typeof req.body === 'string' ? req.body : [req.body?.titulo, req.body?.texto].filter(Boolean).join(' — ')).trim().slice(0, 1000);
+  if (!texto) return res.status(400).json({ erro: 'texto vazio' });
+  res.json({ ok: true }); // responde já: o celular não precisa esperar a IA
+  notificacoes.registrar(texto, membro)
+    .then(r => { console.log(`🏦 Notificação (${membro}): ${r.status}`); return r.msg && avisarMembro(membro, r.msg); })
+    .catch(e => console.error('❌ Erro na notificação do banco:', e.message));
 });
 
 // Assistente (painel e WhatsApp): responde qualquer pergunta sobre as finanças com os dados da casa.
@@ -700,6 +721,15 @@ async function comRetentativa(fn) {
   }
 }
 
+// Uma pergunta simples ao Claude, devolvendo o texto (usada pelas notificações do banco). max_tokens folgado: o raciocínio do modelo conta no limite.
+async function claudeTexto(system, usuario, maxTokens = 3000) {
+  if (!CLAUDE_API_KEY) throw new Error('CLAUDE_API_KEY não definida');
+  const r = await comRetentativa(() => axios.post('https://api.anthropic.com/v1/messages', {
+    model: CLAUDE_MODEL, max_tokens: maxTokens, system, messages: [{ role: 'user', content: usuario }]
+  }, { headers: { 'x-api-key': CLAUDE_API_KEY, 'anthropic-version': '2023-06-01' }, timeout: 20000 }));
+  return textoDoClaude(r);
+}
+
 async function interpretar(texto) {
   if (!CLAUDE_API_KEY) {
     console.error('❌ CLAUDE_API_KEY não definida');
@@ -810,6 +840,7 @@ function executarComando(c, origem, numero) {
   if (!campos.length) return c.resposta || `O que você quer mudar em ${resumo}?`;
   if (c.categoria && c.categoria !== alvo.categoria && !c.subcategoria) alvo.subcategoria = ''; // subcategoria antiga não vale na categoria nova
   Object.assign(alvo, Object.fromEntries(campos));
+  if (c.categoria || c.subcategoria) notificacoes.aprender(obj, alvo); // compra vinda do banco corrigida pelo WhatsApp: lembra a loja
   if (c.conversao) Object.assign(alvo, { moeda: c.conversao.moeda, valorOriginal: c.conversao.original, cotacao: c.conversao.taxa });
   gravar(obj);
   return (c.resposta || `✏️ Atualizei ${resumo}.`) + notaConversao(c);
