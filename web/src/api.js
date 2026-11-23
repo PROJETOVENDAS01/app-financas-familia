@@ -36,5 +36,14 @@ export const api = {
   criarFixo: f => req('POST', '/api/fixos', f),
   editarFixo: (id, f) => req('PUT', '/api/fixos/' + id, f),
   excluirFixo: id => req('DELETE', '/api/fixos/' + id),
-  perguntar: (pergunta, mes, historico) => req('POST', '/api/assistente', { pergunta, mes, historico }, true)
+  // O servidor devolve um número de pedido na hora e o Claude responde em seguida: aqui consultamos o resultado em requisições curtas
+  perguntar: async (pergunta, mes, historico) => {
+    const { id } = await req('POST', '/api/assistente', { pergunta, mes, historico }, true);
+    for (let i = 0; i < 60; i++) {
+      await new Promise(ok => setTimeout(ok, 1200));
+      const r = await req('GET', '/api/assistente/' + id);
+      if (r.pronto) { if (r.erro) throw new Error(r.erro); return { resposta: r.resposta }; }
+    }
+    throw new Error('O assistente demorou demais. Tente de novo.');
+  }
 };

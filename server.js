@@ -306,8 +306,21 @@ app.post('/api/assistente', async (req, res) => {
   const pergunta = String(req.body?.pergunta || '').slice(0, 500).trim();
   if (!pergunta) return res.status(400).json({ erro: 'pergunta vazia' });
   const historico = Array.isArray(req.body?.historico) ? req.body.historico.filter(h => h && typeof h.content === 'string') : [];
-  try { res.json({ resposta: await perguntarAoAssistente(pergunta, { mes: req.body?.mes, historico }) }); }
-  catch (err) { res.status(err.propria ? err.status : 502).json({ erro: err.message }); }
+  // Responde na hora com um número de pedido e deixa o Claude trabalhar: uma requisição aberta por ~5 s era devolvida como 502 pelo proxy, mesmo com o servidor respondendo certo. O painel consulta o resultado em requisições curtas.
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  tarefasAssistente.set(id, { criada: Date.now() });
+  perguntarAoAssistente(pergunta, { mes: req.body?.mes, historico })
+    .then(resposta => tarefasAssistente.set(id, { criada: Date.now(), resposta }))
+    .catch(err => tarefasAssistente.set(id, { criada: Date.now(), erro: err.message }));
+  res.status(202).json({ id });
+});
+const tarefasAssistente = new Map();
+setInterval(() => { for (const [id, t] of tarefasAssistente) if (Date.now() - t.criada > 600000) tarefasAssistente.delete(id); }, 300000).unref();
+app.get('/api/assistente/:id', (req, res) => {
+  const t = tarefasAssistente.get(req.params.id);
+  if (!t) return res.status(404).json({ erro: 'Não achei essa pergunta (o servidor pode ter reiniciado). Pergunte de novo.' });
+  if (t.erro) return res.json({ pronto: true, erro: t.erro });
+  res.json(t.resposta === undefined ? { pronto: false } : { pronto: true, resposta: t.resposta });
 });
 
 // Conversa do WhatsApp: guarda as últimas trocas de cada número por 10 minutos, para perguntas de continuação
