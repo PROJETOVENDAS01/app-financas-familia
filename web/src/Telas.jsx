@@ -12,7 +12,7 @@ const FILTROS = [
   ['parcelas', 'Parceladas', t => t.parcelas > 1]
 ];
 
-export function Transacoes({ transacoes, mes, nomesMembros, editar, excluir, nova }) {
+export function Transacoes({ transacoes, config, mes, nomesMembros, editar, excluir, nova }) {
   const [q, setQ] = useState(''), [cat, setCat] = useState(''), [mem, setMem] = useState(''), [tipo, setTipo] = useState(''), [especial, setEspecial] = useState('');
   const lista = useMemo(() => transacoes
     .filter(t => t.data.startsWith(mes))
@@ -24,13 +24,15 @@ export function Transacoes({ transacoes, mes, nomesMembros, editar, excluir, nov
     .sort((a, b) => b.data.localeCompare(a.data) || b.id - a.id), [transacoes, mes, q, cat, mem, tipo, especial]);
   const rec = soma(lista.filter(t => t.tipo === 'receita')), desp = soma(lista.filter(t => t.tipo === 'despesa' && !t.fatura));
   const filtrando = q || cat || mem || tipo || especial;
+  // categorias do cadastro da família + Renda + as que aparecem nos lançamentos (ex.: Fatura do cartão, uma categoria que foi apagada)
+  const nomesCat = [...new Set([...(config?.categorias?.length ? config.categorias : DESPESAS).map(c => c.n), 'Renda', ...transacoes.map(t => t.categoria).filter(Boolean)])];
   return (
     <Card tilt={false}>
       <div className="toolbar">
         <input className="field grow" placeholder="Buscar lançamento" value={q} onChange={e => setQ(e.target.value)} aria-label="Buscar" />
         <select className="field" value={tipo} onChange={e => setTipo(e.target.value)} aria-label="Tipo"><option value="">Todos os tipos</option><option value="despesa">Despesas</option><option value="receita">Receitas</option></select>
         <select className="field" value={especial} onChange={e => setEspecial(e.target.value)} aria-label="Filtrar por"><option value="">Todos os lançamentos</option>{FILTROS.map(([k, nome]) => <option key={k} value={k}>{nome}</option>)}</select>
-        <select className="field" value={cat} onChange={e => setCat(e.target.value)} aria-label="Categoria"><option value="">Todas as categorias</option>{CATS.map(c => <option key={c.n}>{c.n}</option>)}</select>
+        <select className="field" value={cat} onChange={e => setCat(e.target.value)} aria-label="Categoria"><option value="">Todas as categorias</option>{nomesCat.map(n => <option key={n}>{n}</option>)}</select>
         <select className="field" value={mem} onChange={e => setMem(e.target.value)} aria-label="Membro"><option value="">Todos os membros</option>{nomesMembros.map(n => <option key={n}>{n}</option>)}</select>
         <button className="btn p hd-nova" onClick={nova}>Nova transação</button>
       </div>
@@ -186,7 +188,7 @@ export function Membros({ transacoes, config, mes, nomesMembros, salvarConfig })
       </Card>
       {nomesMembros.map(n => {
         const d = doMes.filter(t => t.membro === n && t.tipo === 'despesa'), r = doMes.filter(t => t.membro === n && t.tipo === 'receita');
-        const g = soma(d), porCat = DESPESAS.map(c => ({ c, v: soma(d.filter(t => t.categoria === c.n)) })).filter(x => x.v > 0).sort((a, b) => b.v - a.v);
+        const g = soma(d), porCat = [...new Set(d.map(t => t.categoria))].map(nome => ({ c: (config.categorias || []).find(c => c.n === nome) || catInfo(nome), v: soma(d.filter(t => t.categoria === nome)) })).filter(x => x.v > 0).sort((a, b) => b.v - a.v); // todas as categorias com gasto, inclusive as cadastradas pela família
         return (
           <Card className="c4 mcard" key={n}>
             <div className="top"><Avatar nome={n} cor={corMembro(n)} grande /><div><div style={{ fontWeight: 800, fontSize: 17 }}>{n}</div><div className="sub">{totD > 0 ? Math.round(g / totD * 100) : 0}% dos gastos do mês</div></div></div>
@@ -243,10 +245,10 @@ export function Assistente({ mes }) {
 }
 
 /* ---------- Formulário (gaveta lateral) ---------- */
-export function Gaveta({ tx, mes, nomesMembros, fechar, salvar }) {
+export function Gaveta({ tx, mes, nomesMembros, config, fechar, salvar }) {
   const editando = !!tx?.id;
-  const catObj = CATS.find(c => c.n === (tx?.categoria || 'Alimentação'));
-  const [f, setF] = useState(() => ({ tipo: 'despesa', valor: '', descricao: '', categoria: 'Alimentação', subcategoria: '', membro: nomesMembros.find(n => n !== 'Família') || 'Família', data: `${mes}-${String(Math.min(new Date().getDate(), 28)).padStart(2, '0')}`, repetir: false, cartao: false, parcelas: '1', ...tx, moeda: 'BRL' }));
+  const despesas = config?.categorias?.length ? config.categorias : DESPESAS; // as categorias e subcategorias que a família cadastrou (não a lista padrão)
+  const [f, setF] = useState(() => ({ tipo: 'despesa', valor: '', descricao: '', categoria: despesas[0]?.n || 'Alimentação', subcategoria: '', membro: nomesMembros.find(n => n !== 'Família') || 'Família', data: `${mes}-${String(Math.min(new Date().getDate(), 28)).padStart(2, '0')}`, repetir: false, cartao: false, parcelas: '1', ...tx, moeda: 'BRL' }));
   const [erro, setErro] = useState('');
   const set = k => e => setF({ ...f, [k]: e.target.value });
   const estrangeira = !editando && f.moeda !== 'BRL'; // valor digitado em dólar/euro/libra: o servidor converte para reais ao salvar
@@ -257,7 +259,10 @@ export function Gaveta({ tx, mes, nomesMembros, fechar, salvar }) {
     api.cotacao(f.moeda).then(c => vivo && setCot(c)).catch(() => vivo && setCot('erro'));
     return () => { vivo = false; };
   }, [f.moeda, estrangeira]);
-  const catAtual = CATS.find(c => c.n === f.categoria);
+  const lista = f.tipo === 'receita' ? CATS.filter(c => c.n === 'Renda') : despesas;
+  const nomesCat = [...new Set([...lista.map(c => c.n), f.categoria])]; // a categoria atual da transação fica na lista mesmo que tenha saído do cadastro
+  const catAtual = lista.find(c => c.n === f.categoria) || CATS.find(c => c.n === f.categoria);
+  const subs = [...new Set([...(catAtual?.sub || []), ...(f.subcategoria ? [f.subcategoria] : [])])]; // idem para a subcategoria
   const enviar = async e => {
     e.preventDefault();
     const valor = Number(String(f.valor).replace(',', '.'));
@@ -271,7 +276,7 @@ export function Gaveta({ tx, mes, nomesMembros, fechar, salvar }) {
       <form className="drawer" onSubmit={enviar} role="dialog" aria-label={editando ? 'Editar transação' : 'Nova transação'}>
         <h2>{editando ? 'Editar transação' : 'Nova transação'}<button type="button" className="round" aria-label="Fechar" onClick={fechar}><Ico d="M18 6 6 18M6 6l12 12" /></button></h2>
         <div className="seg">
-          <button type="button" className={f.tipo === 'despesa' ? 'on' : ''} onClick={() => setF({ ...f, tipo: 'despesa', categoria: f.categoria === 'Renda' ? 'Alimentação' : f.categoria })}>Despesa</button>
+          <button type="button" className={f.tipo === 'despesa' ? 'on' : ''} onClick={() => setF({ ...f, tipo: 'despesa', categoria: f.categoria === 'Renda' ? despesas[0]?.n || 'Alimentação' : f.categoria })}>Despesa</button>
           <button type="button" className={f.tipo === 'receita' ? 'on' : ''} onClick={() => setF({ ...f, tipo: 'receita', categoria: 'Renda' })}>Receita</button>
         </div>
         <label className="f">Valor ({{ BRL: 'R$', USD: 'US$', EUR: '€', GBP: '£' }[f.moeda]})
@@ -290,8 +295,8 @@ export function Gaveta({ tx, mes, nomesMembros, fechar, salvar }) {
             })()}</div>)}
         {erro && <div className="err">{erro}</div>}
         <label className="f">Descrição<input className="field" value={f.descricao} onChange={set('descricao')} placeholder="Ex.: Supermercado" maxLength={100} /></label>
-        <label className="f">Categoria<select className="field" value={f.categoria} onChange={e => setF({ ...f, categoria: e.target.value, subcategoria: '' })}>{CATS.map(c => <option key={c.n}>{c.n}</option>)}</select></label>
-        {catAtual?.sub && catAtual.sub.length > 0 && <label className="f">Tipo<select className="field" value={f.subcategoria} onChange={set('subcategoria')}><option value="">Escolher...</option>{catAtual.sub.map(s => <option key={s}>{s}</option>)}</select></label>}
+        <label className="f">Categoria<select className="field" value={f.categoria} onChange={e => setF({ ...f, categoria: e.target.value, subcategoria: '' })}>{nomesCat.map(n => <option key={n}>{n}</option>)}</select></label>
+        {subs.length > 0 && <label className="f">Tipo<select className="field" value={f.subcategoria} onChange={set('subcategoria')}><option value="">Escolher...</option>{subs.map(s => <option key={s}>{s}</option>)}</select></label>}
         <label className="f">Membro<select className="field" value={f.membro} onChange={set('membro')}>{[...new Set(['Família', ...nomesMembros, f.membro])].map(n => <option key={n}>{n}</option>)}</select></label>
         {f.tipo === 'despesa' && <label className="check"><input type="checkbox" checked={!!f.cartao} onChange={e => setF({ ...f, cartao: e.target.checked })} /> Pago no cartão de crédito</label>}
         {f.tipo === 'despesa' && f.cartao && !editando && <label className="f">Parcelas<input className="field" type="number" min="1" max="48" value={f.parcelas} onChange={set('parcelas')} /><span className="sub">O valor acima é o total da compra. Cada mês entra uma parcela.</span></label>}

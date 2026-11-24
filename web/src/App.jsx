@@ -140,7 +140,7 @@ export default function App() {
           </>}
         </main>
       </div>
-      {gaveta && <Gaveta tx={gaveta} mes={mes} nomesMembros={nomesMembros} fechar={() => setGaveta(null)} salvar={salvar} />}
+      {gaveta && <Gaveta tx={gaveta} mes={mes} nomesMembros={nomesMembros} config={config} fechar={() => setGaveta(null)} salvar={salvar} />}
       {!gaveta && view !== 'assistente' && <button className="fab" aria-label="Nova transação" onClick={() => setGaveta({})}>+</button>}
       {aviso && <div className="toast" role="status">{aviso}</div>}
     </div>
