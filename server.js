@@ -238,7 +238,10 @@ const NOTIF_ENTRADAS = Object.fromEntries((process.env.NOTIF_ENTRADAS || '').spl
   const i = p.indexOf('='), [descricao, sub] = p.slice(i + 1).split('|').map(s => s.trim());
   return [p.slice(0, i).trim().normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(), { descricao, subcategoria: sub || undefined }];
 }).filter(([k, v]) => k && v.descricao));
-const notificacoes = require('./notificacoes')({ ler, gravar, claudeTexto, entradas: NOTIF_ENTRADAS, categoriasAtivas, parcelar, hoje: () => hojeISO(), membros: () => [...new Set([...(ler().config?.membros || []), ...Object.values(MEMBROS_WHATSAPP)])] });
+// NOTIF_FIXAS="EMPRESA XYZ=Salário,BRUNO=Investimento Bruno": quem paga qual receita fixa. O Pix dessa pessoa/empresa marca a receita fixa do mês como recebida (ajusta o valor se vier diferente) em vez de contar de novo
+const semAcento = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+const NOTIF_FIXAS = Object.fromEntries((process.env.NOTIF_FIXAS || '').split(',').map(p => { const i = p.indexOf('='); return [semAcento(p.slice(0, i)), semAcento(p.slice(i + 1))]; }).filter(([k, v]) => k && v));
+const notificacoes = require('./notificacoes')({ ler, gravar, claudeTexto, entradas: NOTIF_ENTRADAS, fixas: NOTIF_FIXAS, categoriasAtivas, parcelar, hoje: () => hojeISO(), membros: () => [...new Set([...(ler().config?.membros || []), ...Object.values(MEMBROS_WHATSAPP)])] });
 // Fatura do cartão (PDF ou prints com "fatura" na legenda): registra o que faltar e confere o resto (ver importarFatura.js)
 const importarFatura = require('./importarFatura')({ ler, gravar, claudeArquivo, categoriasAtivas, chaveLoja: notificacoes.chaveLoja, hoje: () => hojeISO() });
 const avisarMembro = (membro, msg) => Promise.all(Object.keys(MEMBROS_WHATSAPP).filter(n => MEMBROS_WHATSAPP[n] === membro).map(n => enviarWhatsApp(n, msg)));
@@ -373,7 +376,7 @@ const lembrarConversa = (n, pergunta, resposta) => conversasZap.set(n, { quando:
 // "Paguei": marca (ou desfaz) a despesa de uma conta fixa como paga
 app.post('/api/transacoes/:id/pago', (req, res) => {
   const obj = ler();
-  if (!fixos.definirPago(obj, req.params.id, req.body.pago !== false)) return res.status(400).json({ erro: 'só despesas de contas fixas podem ser marcadas como pagas' });
+  if (!fixos.definirPago(obj, req.params.id, req.body.pago !== false)) return res.status(400).json({ erro: 'só lançamentos de contas fixas podem ser marcados como pagos ou recebidos' });
   gravar(obj);
   res.json({ success: true });
 });

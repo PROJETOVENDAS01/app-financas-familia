@@ -147,7 +147,7 @@ module.exports = function criarFixos({ ler, gravar, enviarWhatsApp, membrosWhats
   // "Paguei" nas contas fixas: marca a despesa do mês como paga (ou desfaz). Só despesa que veio de conta fixa.
   function definirPago(obj, id, pago) {
     const t = obj.transacoes.find(x => x.id === Number(id));
-    if (!t || !t.fixoId || t.tipo !== 'despesa') return false;
+    if (!t || !t.fixoId) return false; // despesa fixa = "paga", receita fixa = "recebida"
     if (pago) { t.pago = true; t.pagoEm = agoraSP().slice(0, 10); t.aguardandoValor = false; } else { delete t.pago; delete t.pagoEm; }
     return true;
   }

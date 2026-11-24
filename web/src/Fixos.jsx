@@ -13,7 +13,7 @@ function Paguei({ tx, pagar }) {
   const atrasada = !tx.pago && tx.data < hoje();
   return (
     <button className={`pg ${tx.pago ? 'on' : atrasada ? 'late' : ''}`} aria-pressed={!!tx.pago} onClick={() => pagar(tx, !tx.pago)}>
-      {tx.pago ? `✓ Paga${tx.pagoEm ? ` em ${tx.pagoEm.slice(8)}/${tx.pagoEm.slice(5, 7)}` : ''}` : 'Marcar como paga'}
+      {tx.pago ? `✓ ${tx.tipo === 'receita' ? 'Recebida' : 'Paga'}${tx.pagoEm ? ` em ${tx.pagoEm.slice(8)}/${tx.pagoEm.slice(5, 7)}` : ''}` : tx.tipo === 'receita' ? 'Marcar como recebida' : 'Marcar como paga'}
     </button>
   );
 }
@@ -26,7 +26,7 @@ function Linha({ f, tx, pagar, info, aprox, editar, excluir }) {
       <div style={{ minWidth: 0 }}>
         <div className="n">{f.descricao}{!f.ativo && <span className="wa">Pausada</span>}{f.ativo && f.avisar && <span className="wa">Avisa no WhatsApp</span>}{f.fatura && <span className="wa cc">Fatura do cartão</span>}{f.cartao && <span className="wa cc">Cartão</span>}{f.variavel && !f.fatura && <span className="wa">Valor varia</span>}{tx && f.tipo === 'despesa' && !tx.pago && tx.data < hoje() && <span className="wa pend">Venceu</span>}</div>
         <div className="m">Todo dia {f.dia} · {f.categoria}{f.subcategoria ? ` › ${f.subcategoria}` : ''} · {f.membro}</div>
-        {tx && f.tipo === 'despesa' && <Paguei tx={tx} pagar={pagar} />}
+        {tx && <Paguei tx={tx} pagar={pagar} />}
       </div>
       <div className={`v ${f.tipo === 'receita' ? 'inc' : 'exp'}`}>{f.tipo === 'receita' ? '+' : '−'} {f.moeda ? `${SIMB[f.moeda]} ${num2(f.valor)}` : brl(f.valor)}{f.moeda && aprox != null && <small style={{ display: 'block', fontWeight: 600, opacity: .7 }}>≈ {brl(aprox)}</small>}</div>
       <div className="acts">
