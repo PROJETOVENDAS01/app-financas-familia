@@ -131,7 +131,7 @@ export default function App() {
             </div>
           </header>
           {transacoes === null ? <div className="skel" /> : <>
-            {view === 'geral' && <Overview {...comum} ir={setView} />}
+            {view === 'geral' && <Overview {...comum} ir={setView} editar={setGaveta} excluir={excluir} />}
             {view === 'transacoes' && <Transacoes {...comum} transacoes={transacoes} editar={setGaveta} excluir={excluir} nova={() => setGaveta({})} />}
             {view === 'metas' && <Metas {...comum} salvarConfig={salvarConfig} />}
             {view === 'fixos' && <Fixos {...comum} todas={transacoes} pagar={pagar} fixos={fixos} salvar={salvarFixo} excluir={excluirFixo} excluirCompra={excluirCompra} />}

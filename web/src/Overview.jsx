@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Card, Anel, Avatar, Lancamento, Vazio, Texto } from './ui.jsx';
 import { DESPESAS, brl, brl0, hoje, mesAtual, diasNoMes, soma, corMembro, memo } from './util.js';
 import { api } from './api.js';
+import { Detalhe } from './Detalhe.jsx';
 
 const PROMPT_INSIGHT = 'Faça uma análise curta do mês: o que está fora do normal, comparado ao mês anterior, e uma ação concreta para fechar o mês dentro das metas.';
 
@@ -28,7 +29,8 @@ function Ritmo({ doMes, mes, limite }) {
   );
 }
 
-export default function Overview({ transacoes, config, mes, ir, nomesMembros }) {
+export default function Overview({ transacoes, config, mes, ir, nomesMembros, editar, excluir }) {
+  const [det, setDet] = useState(null); // gaveta de detalhe aberta: { kind: 'cat', n, sub } ou { kind: 'cartao' }
   const doMes = useMemo(() => transacoes.filter(t => t.data.startsWith(mes)), [transacoes, mes]);
   const desp = doMes.filter(t => t.tipo === 'despesa'), rec = doMes.filter(t => t.tipo === 'receita');
   const totD = soma(desp), totR = soma(rec);
@@ -65,7 +67,17 @@ export default function Overview({ transacoes, config, mes, ir, nomesMembros }) 
   const porMembro = nomesMembros.map(n => ({ n, v: soma(desp.filter(t => t.membro === n)) })).filter(m => m.v > 0 || config.membros.includes(m.n));
   const maxM = Math.max(...porMembro.map(m => m.v), 1);
 
+  // o conteúdo da gaveta sai dos dados de agora (e não de uma cópia), então editar ou apagar um lançamento de dentro dela atualiza a lista
+  const detalhe = !det ? null : det.kind === 'cartao'
+    ? { titulo: 'Cartão de crédito', emoji: '💳', itens: noCartao, rotuloDe: t => t.categoria, nomeRotulo: 'Categoria' }
+    : (() => {
+      const c = grupos.find(x => x.n === det.n);
+      return c && { titulo: c.n, emoji: c.e, itens: c.fora ? fora : desp.filter(t => t.categoria === c.n), rotuloDe: c.fora ? (t => t.categoria) : subDe, nomeRotulo: c.fora ? 'Categoria' : 'Subcategoria', subInicial: det.sub, limite: config.orcamentos[c.n] || 0 };
+    })();
+  const abrir = d => ({ role: 'button', tabIndex: 0, 'aria-label': `Ver os lançamentos: ${d.kind === 'cartao' ? 'cartão de crédito' : d.n}`, className: 'gc-click', onClick: () => setDet(d), onKeyDown: e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setDet(d); } } });
+
   return (
+    <>
     <div className="bento">
       <Card className="c8">
         <div className="lab">{limite > 0 ? (restante >= 0 ? 'Você ainda pode gastar' : 'Você passou do orçamento em') : 'Gasto no mês'}</div>
@@ -105,7 +117,7 @@ export default function Overview({ transacoes, config, mes, ir, nomesMembros }) 
         itens.forEach(t => { const k = c.fora ? t.categoria : subDe(t); porSub[k] = (porSub[k] || 0) + t.valor; });
         const linhas = Object.entries(porSub).sort((a, b) => b[1] - a[1]);
         return (
-          <Card className="c4 glass" key={c.n} style={{ '--c': c.c }}>
+          <Card {...abrir({ kind: 'cat', n: c.n })} className="c4 glass gc-click" key={c.n} style={{ '--c': c.c }}>
             <div className="gc-hd">
               <Anel pct={l > 0 ? g / l : totD > 0 ? g / totD : 0} cor={passou ? 'var(--exp)' : c.c} emoji={c.e} tam={56} />
               <div>
@@ -116,7 +128,7 @@ export default function Overview({ transacoes, config, mes, ir, nomesMembros }) 
             <div className="gc-sub">
               {linhas.length === 0 && <div className="gc-empty">Sem gastos neste mês</div>}
               {linhas.map(([nome, v]) => (
-                <div className="gc-row" key={nome}>
+                <div className="gc-row" key={nome} onClick={c.fora ? undefined : e => { e.stopPropagation(); setDet({ kind: 'cat', n: c.n, sub: nome }); }} title={c.fora ? undefined : `Ver só ${nome}`}>
                   <div className="t"><span>{nome}</span><span>{brl0(v)}</span></div>
                   <div className="gc-bar"><i style={{ width: `${v / g * 100}%` }} /></div>
                 </div>
@@ -126,7 +138,7 @@ export default function Overview({ transacoes, config, mes, ir, nomesMembros }) 
         );
       })}
 
-      <Card className="c12 glass" style={{ '--c': '#8b5cf6' }}>
+      <Card {...abrir({ kind: 'cartao' })} className="c12 glass gc-click" style={{ '--c': '#8b5cf6' }}>
         <div className="gc-hd" style={{ justifyContent: 'space-between' }}>
           <div>
             <h3 style={{ margin: 0 }}>Cartão de crédito</h3>
@@ -172,5 +184,8 @@ export default function Overview({ transacoes, config, mes, ir, nomesMembros }) 
           : [...doMes].sort((a, b) => b.data.localeCompare(a.data) || b.id - a.id).slice(0, 5).map(t => <Lancamento key={t.id} t={t} />)}
       </Card>
     </div>
+    {/* fora do .bento: o perspective dele prenderia o painel fixo dentro da grade */}
+    {detalhe && <Detalhe key={`${det.kind}-${det.n || ''}-${det.sub || ''}`} mes={mes} {...detalhe} fechar={() => setDet(null)} editar={editar && (t => { setDet(null); editar(t); })} excluir={excluir} />}
+    </>
   );
 }
