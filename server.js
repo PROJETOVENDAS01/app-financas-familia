@@ -129,6 +129,7 @@ app.post('/api/transacoes', async (req, res) => {
     if (n > 1 && t.tipo === 'despesa') t.cartao = true; // parcelado = cartão de crédito
     obj.transacoes.push(...parcelar({ id, ...t, ...extra }, t.tipo === 'despesa' ? n : 1));
     gravar(obj);
+    avisarGestores(t.membro, t, 'pelo painel');
     res.json({ success: true, id });
   } catch (e) {
     console.error('❌ Erro ao salvar transação:', e.message);
@@ -246,6 +247,18 @@ const notificacoes = require('./notificacoes')({ ler, gravar, claudeTexto, entra
 const importarFatura = require('./importarFatura')({ ler, gravar, claudeArquivo, categoriasAtivas, regraAtiva: notificacoes.regraAtiva, hoje: () => hojeISO() });
 const avisarMembro = (membro, msg) => Promise.all(Object.keys(MEMBROS_WHATSAPP).filter(n => MEMBROS_WHATSAPP[n] === membro).map(n => enviarWhatsApp(n, msg)));
 
+// GESTORES="THIAGO": recebem um WhatsApp a cada lançamento novo de OUTRO membro (WhatsApp, painel ou notificação do banco)
+const GESTORES = (process.env.GESTORES || '').split(',').map(semAcento).filter(Boolean);
+const ehGestor = nome => GESTORES.some(g => semAcento(nome).includes(g));
+function avisarGestores(autor, t, canal) {
+  try {
+    if (!GESTORES.length || !autor || autor === 'Família' || ehGestor(autor)) return;
+    if (t.data.slice(0, 7) > hojeISO().slice(0, 7)) return; // shortcut:"repetir 12 meses" do painel manda 11 lançamentos futuros; só o primeiro avisa
+    const msg = `👀 ${autor} lançou ${t.tipo === 'receita' ? 'uma receita de' : ''} ${brl2(t.valor)} em ${t.categoria}${t.descricao ? ` (${t.descricao})` : ''} — ${canal}.`.replace('  ', ' ');
+    Object.entries(MEMBROS_WHATSAPP).filter(([, m]) => ehGestor(m)).forEach(([n]) => enviarWhatsApp(n, msg).catch(() => {}));
+  } catch (e) { console.error('❌ Erro ao avisar gestor:', e.message); }
+}
+
 app.use('/webhook/notificacao', express.text({ type: 'text/*', limit: '10kb' })); // o app do celular pode mandar só o texto
 app.post('/webhook/notificacao', (req, res) => {
   if (!Object.keys(NOTIF_TOKENS).length) return res.status(503).json({ erro: 'NOTIF_TOKENS não configurado' });
@@ -266,7 +279,7 @@ app.post('/webhook/notificacao', (req, res) => {
   res.json(ack); // responde já: o celular não precisa esperar a IA
   const fonte = b && typeof b === 'object' ? String(b.source_name || b.source || '').slice(0, 60) : ''; // app que gerou a notificação
   notificacoes.registrar(texto, membro, fonte)
-    .then(r => { console.log(`🏦 Notificação (${membro}): ${r.status}`); return r.msg && avisarMembro(membro, r.msg); })
+    .then(r => { console.log(`🏦 Notificação (${membro}): ${r.status}`); if (r.status === 'registrada' && r.tx) avisarGestores(membro, r.tx, 'notificação do banco'); return r.msg && avisarMembro(membro, r.msg); })
     .catch(e => console.error('❌ Erro na notificação do banco:', e.message));
 });
 
@@ -657,6 +670,7 @@ app.post('/webhook/whatsapp', async (req, res) => {
         attachment_url: pend.urlAnexo
       });
       fs.writeFileSync(TRANSACOES_FILE, JSON.stringify(data_obj, null, 2));
+      avisarGestores(membroDe(pend.numero), data_obj.transacoes[data_obj.transacoes.length - 1], 'pelo WhatsApp (foto/documento)');
       await enviarWhatsApp(numeroRemetente, `✅ ${brl2(pend.transacao.valor)} em ${pend.transacao.categoria} anotado!${pend.urlAnexo ? '\n📎 Anexo salvo.' : ''}`);
       return;
     }
@@ -871,6 +885,7 @@ function executarComando(c, origem, numero) {
     }, parcelas);
     obj.transacoes.push(...itens);
     gravar(obj);
+    avisarGestores(itens[0].membro, itens[0], 'pelo WhatsApp');
     const nota = cartao ? `\n💳 Cartão de crédito${itens.length > 1 ? ` · ${itens.length}x de ${brl2(itens[0].valor)}, uma por mês` : ''}` : '';
     return (c.resposta || `✅ ${brl2(c.valor)} em ${c.categoria || 'Outros'} registrado!`) + notaConversao(c) + nota;
   }
