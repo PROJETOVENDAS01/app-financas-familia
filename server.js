@@ -243,7 +243,7 @@ const semAcento = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().
 const NOTIF_FIXAS = Object.fromEntries((process.env.NOTIF_FIXAS || '').split(',').map(p => { const i = p.indexOf('='); return [semAcento(p.slice(0, i)), semAcento(p.slice(i + 1))]; }).filter(([k, v]) => k && v));
 const notificacoes = require('./notificacoes')({ ler, gravar, claudeTexto, entradas: NOTIF_ENTRADAS, fixas: NOTIF_FIXAS, categoriasAtivas, parcelar, hoje: () => hojeISO(), membros: () => [...new Set([...(ler().config?.membros || []), ...Object.values(MEMBROS_WHATSAPP)])] });
 // Fatura do cartão (PDF ou prints com "fatura" na legenda): registra o que faltar e confere o resto (ver importarFatura.js)
-const importarFatura = require('./importarFatura')({ ler, gravar, claudeArquivo, categoriasAtivas, chaveLoja: notificacoes.chaveLoja, hoje: () => hojeISO() });
+const importarFatura = require('./importarFatura')({ ler, gravar, claudeArquivo, categoriasAtivas, regraAtiva: notificacoes.regraAtiva, hoje: () => hojeISO() });
 const avisarMembro = (membro, msg) => Promise.all(Object.keys(MEMBROS_WHATSAPP).filter(n => MEMBROS_WHATSAPP[n] === membro).map(n => enviarWhatsApp(n, msg)));
 
 app.use('/webhook/notificacao', express.text({ type: 'text/*', limit: '10kb' })); // o app do celular pode mandar só o texto
@@ -681,6 +681,10 @@ app.post('/webhook/whatsapp', async (req, res) => {
   const respostaDesfazer = importarFatura.desfazer(text, membroDe(numeroRemetente));
   if (respostaDesfazer) { await enviarWhatsApp(numeroRemetente, respostaDesfazer); return; }
 
+  // "regra NOME" mostra o que o bot aprendeu de uma loja/pessoa; "esquece NOME" apaga (comandos locais, sem gastar o Claude)
+  const respostaRegra = notificacoes.comandoRegra(text);
+  if (respostaRegra) { await enviarWhatsApp(numeroRemetente, respostaRegra); return; }
+
   // Resposta à pergunta de categoria de uma compra/Pix vindo do banco ("ok", "2" ou "Saúde")
   const respostaCategoria = notificacoes.responderCategoria(text, membroDe(numeroRemetente));
   if (respostaCategoria) { await enviarWhatsApp(numeroRemetente, respostaCategoria); return; }
@@ -905,10 +909,10 @@ function executarComando(c, origem, numero) {
   if (!campos.length) return c.resposta || `O que você quer mudar em ${resumo}?`;
   if (c.categoria && c.categoria !== alvo.categoria && !c.subcategoria) alvo.subcategoria = ''; // subcategoria antiga não vale na categoria nova
   Object.assign(alvo, Object.fromEntries(campos));
-  if (c.categoria || c.subcategoria) notificacoes.aprender(obj, alvo); // compra vinda do banco corrigida pelo WhatsApp: lembra a loja
+  const ap = c.categoria || c.subcategoria ? notificacoes.aprender(obj, alvo) : null; // compra vinda do banco corrigida pelo WhatsApp: conta como escolha (e apaga a regra se ela veio de uma)
   if (c.conversao) Object.assign(alvo, { moeda: c.conversao.moeda, valorOriginal: c.conversao.original, cotacao: c.conversao.taxa });
   gravar(obj);
-  return (c.resposta || `✏️ Atualizei ${resumo}.`) + notaConversao(c);
+  return (c.resposta || `✏️ Atualizei ${resumo}.`) + notaConversao(c) + (ap?.apagou ? `\n🧹 A regra aprendida de ${alvo.descricao} não valia para este caso: apaguei.` : '');
 }
 
 // Texto ou áudio transcrito → interpreta e responde
